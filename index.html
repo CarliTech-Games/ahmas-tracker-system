@@ -179,11 +179,12 @@
         };
 
         // --- SECURITY HELPER: Timestamp Normalizer ---
+        // Handles both legacy Date.now() numbers and Firestore Timestamp objects
         const getMillis = (ts) => {
-            if (!ts) return Date.now(); // FIX: Treat pending/null as "now"
-            if (typeof ts === 'number') return ts; 
-            if (typeof ts.toMillis === 'function') return ts.toMillis(); 
-            if (ts.seconds) return ts.seconds * 1000; 
+            if (!ts) return Date.now(); // FIX: Treat pending/null as "now" so it appears at the top
+            if (typeof ts === 'number') return ts; // Legacy or client-side number
+            if (typeof ts.toMillis === 'function') return ts.toMillis(); // Firestore Timestamp object
+            if (ts.seconds) return ts.seconds * 1000; // Raw object fallback
             return 0;
         };
 
@@ -197,40 +198,62 @@
             </div>
         );
 
+
         // --- List Management Component (Admin Only) ---
         const ListManagement = ({ therapists, services, durations, onAdd, onDelete, onEdit }) => {
             const [activeTab, setActiveTab] = useState('therapist'); 
+            
+            // Add State
             const [newItemName, setNewItemName] = useState('');
+            // Service Prices: Map { "60 Mins": 450, "90 Mins": 675 }
             const [newItemPrices, setNewItemPrices] = useState({}); 
+            // Therapist Commission: String/Number
+            const [newItemCommission, setNewItemCommission] = useState('');
+            
+            // Edit State
             const [editingId, setEditingId] = useState(null);
             const [editName, setEditName] = useState('');
             const [editPrices, setEditPrices] = useState({});
+            const [editCommission, setEditCommission] = useState('');
 
             const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
             const closeModal = () => setModal({ ...modal, isOpen: false });
             
             const handleFormSubmit = (e) => {
                 e.preventDefault();
-                onAdd(activeTab, newItemName, activeTab === 'service' ? newItemPrices : null);
+                // Pass extra data based on type
+                let extraData = null;
+                if (activeTab === 'service') extraData = newItemPrices;
+                if (activeTab === 'therapist') extraData = newItemCommission; // Pass commission as simple value
+
+                onAdd(activeTab, newItemName, extraData);
                 setNewItemName('');
                 setNewItemPrices({});
+                setNewItemCommission('');
             };
             
             const startEdit = (item) => {
                 setEditingId(item.id);
                 setEditName(item.name);
                 setEditPrices(item.prices || {});
+                setEditCommission(item.commission || '');
             };
 
             const cancelEdit = () => {
                 setEditingId(null);
                 setEditName('');
                 setEditPrices({});
+                setEditCommission('');
             };
 
             const saveEdit = () => {
                 const updatedData = { name: editName };
-                if (activeTab === 'service') updatedData.prices = editPrices;
+                if (activeTab === 'service') {
+                    updatedData.prices = editPrices;
+                }
+                if (activeTab === 'therapist') {
+                    updatedData.commission = editCommission;
+                }
                 onEdit(activeTab, editingId, updatedData);
                 setEditingId(null);
             };
@@ -238,6 +261,7 @@
             const handlePriceChange = (durationName, val, isEdit = false) => {
                 const setter = isEdit ? setEditPrices : setNewItemPrices;
                 const current = isEdit ? editPrices : newItemPrices;
+                
                 if (!val) {
                     const copy = { ...current };
                     delete copy[durationName];
@@ -247,57 +271,187 @@
                 }
             };
 
-            let currentList = [], placeholderText = "", icon = null;
-            if (activeTab === 'therapist') { currentList = therapists; placeholderText = "Enter Therapist Name"; icon = <Icons.Users size={18} />; }
-            else if (activeTab === 'service') { currentList = services; placeholderText = "Enter Service Name"; icon = <Icons.Tag size={18} />; }
-            else { currentList = durations; placeholderText = "Enter Duration"; icon = <Icons.Hourglass size={18} />; }
+            let currentList = [];
+            let placeholderText = "";
+            let icon = null;
+
+            if (activeTab === 'therapist') {
+                currentList = therapists;
+                placeholderText = "Enter Therapist Name";
+                icon = <Icons.Users size={18} />;
+            } else if (activeTab === 'service') {
+                currentList = services;
+                placeholderText = "Enter Service Name (e.g. Swedish)";
+                icon = <Icons.Tag size={18} />;
+            } else {
+                currentList = durations;
+                placeholderText = "Enter Duration (e.g. 60 Mins)";
+                icon = <Icons.Hourglass size={18} />;
+            }
 
             return (
                 <div className="space-y-6 fade-in">
                     <h2 className="text-lg font-bold text-logo-green-800 flex gap-2 items-center"><Icons.ShieldCheck size={18} className="text-logo-green-700"/> Master Data Lists</h2>
+                    
+                    {/* Tabs */}
                     <div className="flex bg-slate-100 p-1 rounded-lg">
-                        <button onClick={() => setActiveTab('therapist')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='therapist' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}><Icons.Users size={14}/> Therapists</button>
-                        <button onClick={() => setActiveTab('duration')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='duration' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}><Icons.Clock size={14}/> Minutes</button>
-                        <button onClick={() => setActiveTab('service')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='service' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}><Icons.Sparkles size={14}/> Services</button>
+                        <button onClick={() => setActiveTab('therapist')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='therapist' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Users size={14}/> Therapists
+                        </button>
+                        <button onClick={() => setActiveTab('duration')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='duration' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Clock size={14}/> Minutes
+                        </button>
+                        <button onClick={() => setActiveTab('service')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='service' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Sparkles size={14}/> Services
+                        </button>
                     </div>
+
+                    {/* Add New Item */}
                     <div className="bg-white rounded-xl shadow-sm border border-logo-green-100 p-6">
                         <h3 className="font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wide text-slate-500"><Icons.Plus size={16}/> Add New {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
                         <form onSubmit={handleFormSubmit} className="flex flex-col gap-3">
-                            <div className="flex gap-2"><input required placeholder={placeholderText} value={newItemName} onChange={e => setNewItemName(e.target.value)} className="flex-1 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"/></div>
+                            <div className="flex gap-2">
+                                <input 
+                                    required 
+                                    placeholder={placeholderText} 
+                                    value={newItemName} 
+                                    onChange={e => setNewItemName(e.target.value)} 
+                                    className="flex-1 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
+                                />
+                                {activeTab === 'therapist' && (
+                                    <input 
+                                        type="number"
+                                        placeholder="Comm %" 
+                                        value={newItemCommission} 
+                                        onChange={e => setNewItemCommission(e.target.value)} 
+                                        className="w-24 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
+                                    />
+                                )}
+                            </div>
+                            
+                            {/* Dynamic Price Inputs for Services */}
                             {activeTab === 'service' && (
                                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                                     <p className="text-xs font-bold text-slate-500 mb-2 uppercase">Set Prices per Duration (Optional)</p>
-                                    {durations.length === 0 && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first.</p>}
+                                    {durations.length === 0 && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first to set prices.</p>}
                                     <div className="grid grid-cols-2 gap-2">
                                         {durations.map(d => (
                                             <div key={d.id} className="flex items-center gap-2 bg-white p-2 border rounded">
                                                 <span className="text-xs font-bold text-slate-600 whitespace-nowrap w-16">{d.name}:</span>
-                                                <input type="number" placeholder="Price" className="w-full text-sm outline-none" value={newItemPrices[d.name] || ''} onChange={e => handlePriceChange(d.name, e.target.value, false)}/>
+                                                <input 
+                                                    type="number" 
+                                                    placeholder="Price"
+                                                    className="w-full text-sm outline-none"
+                                                    value={newItemPrices[d.name] || ''}
+                                                    onChange={e => handlePriceChange(d.name, e.target.value, false)}
+                                                />
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             )}
+
                             <button type="submit" className="w-full bg-logo-green-600 text-white p-3 rounded-lg font-bold hover:bg-logo-green-700 transition shadow-sm">Add to List</button>
                         </form>
                     </div>
+
+                    {/* Current List */}
                     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                        <div className="p-4 bg-logo-green-50 font-bold text-logo-green-800 text-sm border-b border-logo-green-100 flex justify-between items-center"><span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList.length})</span>{icon}</div>
+                        <div className="p-4 bg-logo-green-50 font-bold text-logo-green-800 text-sm border-b border-logo-green-100 flex justify-between items-center">
+                            <span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList.length})</span>
+                            {icon}
+                        </div>
+                        
                         <div className="max-h-[400px] overflow-y-auto">
-                            {currentList.length === 0 ? <p className="text-center text-slate-400 p-6 italic">No items found.</p> : currentList.map(item => (
-                                <div key={item.id} className="p-4 border-b flex flex-col gap-2 last:border-b-0 hover:bg-slate-50">
-                                    <div className="flex justify-between items-center w-full">
-                                        {editingId === item.id ? <input value={editName} onChange={e => setEditName(e.target.value)} className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500 mr-2"/> : <span className="text-slate-700 font-medium">{item.name}</span>}
-                                        <div className="flex gap-1">
-                                            {editingId === item.id ? <><button onClick={saveEdit} className="text-logo-green-600 hover:bg-logo-green-50 p-2 rounded"><Icons.CheckCircle2 size={18}/></button><button onClick={cancelEdit} className="text-slate-400 hover:bg-slate-100 p-2 rounded"><Icons.X size={18}/></button></> : <><button onClick={() => startEdit(item)} className="text-slate-300 hover:text-blue-500 p-2 rounded hover:bg-blue-50"><Icons.Pencil size={16} /></button><button type="button" onClick={() => onDelete(activeTab, item.id, item.name)} className="text-slate-300 hover:text-red-500 p-2 rounded hover:bg-red-50"><Icons.Trash2 size={16}/></button></>}
+                            {currentList.length === 0 ? (
+                                <p className="text-center text-slate-400 p-6 italic">No items found.</p>
+                            ) : (
+                                currentList.map(item => (
+                                    <div key={item.id} className="p-4 border-b flex flex-col gap-2 last:border-b-0 hover:bg-slate-50">
+                                        <div className="flex justify-between items-center w-full">
+                                            {editingId === item.id ? (
+                                                <div className="flex gap-2 flex-1 mr-2">
+                                                    <input 
+                                                        value={editName}
+                                                        onChange={e => setEditName(e.target.value)}
+                                                        className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"
+                                                    />
+                                                    {activeTab === 'therapist' && (
+                                                        <input 
+                                                            type="number"
+                                                            placeholder="%"
+                                                            value={editCommission}
+                                                            onChange={e => setEditCommission(e.target.value)}
+                                                            className="w-16 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"
+                                                        />
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-700 font-medium">
+                                                    {item.name}
+                                                    {item.commission && activeTab === 'therapist' && <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">{item.commission}%</span>}
+                                                </span>
+                                            )}
+                                            
+                                            {/* Actions */}
+                                            <div className="flex gap-1">
+                                                {editingId === item.id ? (
+                                                    <>
+                                                        <button onClick={saveEdit} className="text-logo-green-600 hover:bg-logo-green-50 p-2 rounded transition"><Icons.CheckCircle2 size={18}/></button>
+                                                        <button onClick={cancelEdit} className="text-slate-400 hover:bg-slate-100 p-2 rounded transition"><Icons.X size={18}/></button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => startEdit(item)} className="text-slate-300 hover:text-blue-500 p-2 rounded hover:bg-blue-50 transition" title="Edit Item">
+                                                            <Icons.Pencil size={16} />
+                                                        </button>
+                                                        <button type="button" onClick={() => onDelete(activeTab, item.id, item.name)} className="text-slate-300 hover:text-red-500 p-2 rounded hover:bg-red-50 transition" title="Delete Item">
+                                                            <Icons.Trash2 size={16}/>
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
+
+                                        {/* Service Pricing Details (View & Edit) */}
+                                        {activeTab === 'service' && (
+                                            <div className="text-xs text-slate-500 w-full">
+                                                {editingId === item.id ? (
+                                                    <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-100 p-2 rounded">
+                                                        {durations.map(d => (
+                                                            <div key={d.id} className="flex items-center gap-2">
+                                                                <span className="font-bold w-14">{d.name}:</span>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="w-full p-1 border rounded text-xs"
+                                                                    placeholder="0"
+                                                                    value={editPrices[d.name] || ''}
+                                                                    onChange={e => handlePriceChange(d.name, e.target.value, true)}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                        {item.prices && Object.keys(item.prices).length > 0 ? (
+                                                            Object.entries(item.prices).map(([dur, price]) => (
+                                                                <span key={dur} className="bg-logo-green-50 text-logo-green-700 px-2 py-0.5 rounded border border-logo-green-100">
+                                                                    {dur}: <span className="font-bold">P{price}</span>
+                                                                </span>
+                                                            ))
+                                                        ) : (
+                                                            <span className="italic text-slate-300">No specific prices set</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                    {activeTab === 'service' && <div className="text-xs text-slate-500 w-full">{editingId === item.id ? <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-100 p-2 rounded">{durations.map(d => (<div key={d.id} className="flex items-center gap-2"><span className="font-bold w-14">{d.name}:</span><input type="number" className="w-full p-1 border rounded text-xs" placeholder="0" value={editPrices[d.name] || ''} onChange={e => handlePriceChange(d.name, e.target.value, true)}/></div>))}</div> : <div className="flex flex-wrap gap-2 mt-1">{item.prices && Object.keys(item.prices).length > 0 ? Object.entries(item.prices).map(([dur, price]) => (<span key={dur} className="bg-logo-green-50 text-logo-green-700 px-2 py-0.5 rounded border border-logo-green-100">{dur}: <span className="font-bold">P{price}</span></span>)) : <span className="italic text-slate-300">No specific prices set</span>}</div>}</div>}
-                                </div>
-                            ))}
+                                ))
+                            )}
                         </div>
                     </div>
-                    {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
+                      {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
                 </div>
             );
         };
@@ -305,18 +459,54 @@
         // --- Admin Reset User Modal ---
         const AdminResetUserModal = ({ editUserModal, setEditUserModal, handleResetPin }) => {
             if (!editUserModal.isOpen || !editUserModal.user) return null;
+
             const user = editUserModal.user;
+            
             return (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 fade-in">
                     <div className="bg-white rounded-xl p-6 w-full max-w-sm">
-                        <h3 className="text-xl font-bold text-logo-green-800 mb-4 flex items-center gap-2"><Icons.UserCog size={24}/> Reset Staff Credentials</h3>
+                        <h3 className="text-xl font-bold text-logo-green-800 mb-4 flex items-center gap-2">
+                            <Icons.UserCog size={24}/> Reset Staff Credentials
+                        </h3>
+
                         <div className="bg-slate-50 p-4 rounded-lg mb-4">
-                            <p className="text-xs text-slate-500 uppercase font-bold">Staff Name:</p><p className="font-bold text-slate-800 text-lg mb-2">{user.name}</p>
-                            <p className="text-xs text-slate-500 uppercase font-bold">Username:</p><p className="font-mono text-logo-green-700 text-sm">@{user.username}</p>
+                            <p className="text-xs text-slate-500 uppercase font-bold">Staff Name:</p>
+                            <p className="font-bold text-slate-800 text-lg mb-2">{user.name}</p>
+
+                            <p className="text-xs text-slate-500 uppercase font-bold">Username:</p>
+                            <p className="font-mono text-logo-green-700 text-sm">@{user.username}</p>
                         </div>
+
                         <form onSubmit={handleResetPin} className="space-y-4">
-                            <label className="block"><span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN (4 Digits)</span><input required type="password" inputMode="numeric" maxLength="4" value={editUserModal.newPin} onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })} placeholder="Enter new 4-digit PIN" className="w-full p-3 border rounded-lg font-mono focus:ring-2 focus:ring-logo-green-500" /></label>
-                            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setEditUserModal({ isOpen: false, user: null, newPin: '' })} className="px-4 py-2 text-slate-500 rounded hover:bg-slate-100">Cancel</button><button type="submit" className="px-4 py-2 rounded text-white bg-logo-green-600 hover:bg-logo-green-700 font-bold">Reset PIN</button></div>
+                            <label className="block">
+                                <span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN (4 Digits)</span>
+                                <input
+                                    required
+                                    type="password"
+                                    inputMode="numeric"
+                                    maxLength="4"
+                                    value={editUserModal.newPin}
+                                    onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })}
+                                    placeholder="Enter new 4-digit PIN"
+                                    className="w-full p-3 border rounded-lg font-mono focus:ring-2 focus:ring-logo-green-500"
+                                />
+                            </label>
+
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setEditUserModal({ isOpen: false, user: null, newPin: '' })} 
+                                    className="px-4 py-2 text-slate-500 rounded hover:bg-slate-100"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="px-4 py-2 rounded text-white bg-logo-green-600 hover:bg-logo-green-700 font-bold"
+                                >
+                                    Reset PIN
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -331,13 +521,15 @@
             const [isOnline, setIsOnline] = useState(navigator.onLine);
             const [dbReady, setDbReady] = useState(false);
             const [configError, setConfigError] = useState(null); 
-            const [isGlobalLoading, setIsGlobalLoading] = useState(false); 
+            const [isGlobalLoading, setIsGlobalLoading] = useState(false); // NEW: Global Loading State
 
             const [user, setUser] = useState(null);
             const [users, setUsers] = useState([]);
             const [transactions, setTransactions] = useState([]);
             const [expenses, setExpenses] = useState([]); // NEW: Expenses State
             const [history, setHistory] = useState([]);
+            
+            // NEW: Offline Queue State
             const [offlineQueue, setOfflineQueue] = useState([]);
 
             // Master Lists
@@ -347,11 +539,15 @@
             
             const [view, setView] = useState('dashboard');
             const [expandedHistoryId, setExpandedHistoryId] = useState(null);
+            
+            // Staff Accountability State
             const [showMyShift, setShowMyShift] = useState(false);
 
+            // History Filtering State
             const [historyStartDate, setHistoryStartDate] = useState('');
             const [historyEndDate, setHistoryEndDate] = useState('');
             
+            // Forms
             const [loginUsername, setLoginUsername] = useState('');
             const [loginPin, setLoginPin] = useState('');
             const [loginBranch, setLoginBranch] = useState(''); 
@@ -359,156 +555,357 @@
             const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'staff' });
             const [profileData, setProfileData] = useState({ username: '', pin: '' });
             
-            // Booking Form
-            const [formData, setFormData] = useState({ clientName: '', service: '', therapist: '', amount: '', duration: '', type: 'booking', time: new Date().toTimeString().slice(0, 5), targetBranch: '' });
-            
-            // NEW: Expense Form
-            const [expenseForm, setExpenseForm] = useState({ description: '', amount: '', targetBranch: '' });
+            const [formData, setFormData] = useState({
+                clientName: '', 
+                service: '', 
+                therapist: '', 
+                amount: '', 
+                duration: '', // Added Duration
+                type: 'booking', 
+                time: new Date().toTimeString().slice(0, 5),
+                targetBranch: ''
+            });
+            const [modal, setModal] = useState({
+                isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red'
+            });
 
-            const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
             const [editUserModal, setEditUserModal] = useState({ isOpen: false, user: null, newPin: '' });
 
             const closeModal = () => setModal({ ...modal, isOpen: false });
             const closeEditUserModal = () => setEditUserModal({ isOpen: false, user: null, newPin: '' });
 
+
+            // --- 1. INITIALIZE FIREBASE ---
             useEffect(() => {
+                // Load offline queue from local storage
                 const savedQueue = localStorage.getItem('spa_offline_queue');
-                if (savedQueue) { try { setOfflineQueue(JSON.parse(savedQueue)); } catch (e) { console.error("Failed to parse offline queue"); } }
+                if (savedQueue) {
+                    try {
+                        setOfflineQueue(JSON.parse(savedQueue));
+                    } catch (e) {
+                        console.error("Failed to parse offline queue");
+                    }
+                }
+
+                // Restore session from Local Storage
                 const savedUser = localStorage.getItem('spa_user');
-                if (savedUser) { try { setUser(JSON.parse(savedUser)); } catch (e) { console.error("Failed to parse saved user", e); localStorage.removeItem('spa_user'); } }
+                if (savedUser) {
+                    try {
+                        setUser(JSON.parse(savedUser));
+                    } catch (e) {
+                        console.error("Failed to parse saved user", e);
+                        localStorage.removeItem('spa_user');
+                    }
+                }
 
                 const initFirebase = async () => {
-                    if (!firebaseConfig || !firebaseConfig.projectId) { setConfigError("Firebase config incomplete."); return; }
+                    if (!firebaseConfig || !firebaseConfig.projectId) {
+                        setConfigError("Firebase configuration is incomplete. Please check the firebaseConfig object.");
+                        return;
+                    }
+                    
                     try {
-                        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                        if (!firebase.apps.length) {
+                            firebase.initializeApp(firebaseConfig);
+                        }
+                        
                         const auth = firebase.auth();
                         const db = firebase.firestore();
                         const currentAppId = firebaseConfig.projectId || 'default-app-id';
-                        if (initialAuthToken) await auth.signInWithCustomToken(initialAuthToken); else await auth.signInAnonymously();
-                        auth.onAuthStateChanged((u) => { if (u) { setFbUser(u); setFb({ db, auth, appId: currentAppId }); } });
-                    } catch (error) { console.error("FB Init Error:", error); setConfigError("Connection Error. Check Config."); }
+
+                        if (initialAuthToken) {
+                            await auth.signInWithCustomToken(initialAuthToken);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+
+                        auth.onAuthStateChanged((u) => {
+                            if (u) {
+                                setFbUser(u);
+                                setFb({ db, auth, appId: currentAppId });
+                            }
+                        });
+                    } catch (error) { 
+                        console.error("FB Init Error:", error); 
+                        
+                        let msg = error.message || "Unknown connection error";
+                        
+                        if (error.code === 'auth/operation-not-allowed') {
+                            msg = "Anonymous Authentication is DISABLED. Please go to Firebase Console -> Authentication -> Sign-in method -> Enable Anonymous.";
+                        } else if (error.code === 'auth/unauthorized-domain') {
+                            msg = "Domain not authorized. Go to Firebase Console -> Authentication -> Settings -> Authorized Domains and add 'vercel.app' or your custom domain.";
+                        }
+
+                        setConfigError(msg); 
+                    }
                 };
+
                 setTimeout(initFirebase, 500);
-                window.addEventListener('online', () => setIsOnline(true)); window.addEventListener('offline', () => setIsOnline(false));
-                return () => { window.removeEventListener('online', () => setIsOnline(true)); window.removeEventListener('offline', () => setIsOnline(false)); };
+
+                window.addEventListener('online', () => setIsOnline(true));
+                window.addEventListener('offline', () => setIsOnline(false));
+                return () => {
+                    window.removeEventListener('online', () => setIsOnline(true));
+                    window.removeEventListener('offline', () => setIsOnline(false));
+                };
             }, []);
 
-            useEffect(() => { localStorage.setItem('spa_offline_queue', JSON.stringify(offlineQueue)); }, [offlineQueue]);
+            // --- 1b. OFFLINE QUEUE PERSISTENCE & SYNC ---
+            useEffect(() => {
+                localStorage.setItem('spa_offline_queue', JSON.stringify(offlineQueue));
+            }, [offlineQueue]);
 
-            // Updated Sync Logic to handle 'transactions' AND 'expenses'
+            // Sync Logic
             useEffect(() => {
                 const syncOfflineQueue = async () => {
                     if (isOnline && offlineQueue.length > 0 && fb) {
                         const basePath = `artifacts/${fb.appId}/public/data`;
                         const queueCopy = [...offlineQueue];
                         let syncedCount = 0;
+
                         setIsGlobalLoading(true);
                         try {
                             for (const item of queueCopy) {
                                 const collectionName = item.collectionType || 'transactions'; // Default to transactions for backward compat
-                                const itemPayload = { ...item, timestamp: firebase.firestore.FieldValue.serverTimestamp() };
+                                const itemPayload = {
+                                    ...item,
+                                    timestamp: firebase.firestore.FieldValue.serverTimestamp() 
+                                };
                                 delete itemPayload.localId;
                                 delete itemPayload.collectionType; // Clean up
 
                                 await fb.db.collection(`${basePath}/${collectionName}`).add(itemPayload);
                                 syncedCount++;
                             }
+                            
+                            // Clear queue only after success
                             setOfflineQueue([]);
-                            setModal({ isOpen: true, type: 'alert', title: 'Sync Complete', message: `Uploaded ${syncedCount} offline items.`, confirmColor: 'logo-green', onConfirm: closeModal });
-                        } catch (error) { console.error("Sync failed", error); } finally { setIsGlobalLoading(false); }
+                            setModal({ isOpen: true, type: 'alert', title: 'Sync Complete', message: `Successfully uploaded ${syncedCount} offline bookings.`, confirmColor: 'logo-green', onConfirm: closeModal });
+
+                        } catch (error) {
+                            console.error("Sync failed", error);
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
                     }
                 };
+
                 syncOfflineQueue();
             }, [isOnline, fb, offlineQueue.length]);
 
+
+            // --- 2. DATA SYNC (UPDATED: Lazy Loading History) ---
+            
             useEffect(() => {
                 if (!fb || !fbUser) return;
                 const { db, appId } = fb;
                 const basePath = `artifacts/${appId}/public/data`;
+                
                 const getCollection = (name) => db.collection(`${basePath}/${name}`);
 
-                const unsubTrans = getCollection('transactions').onSnapshot((snapshot) => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
-                    setTransactions(data);
-                    setDbReady(true);
-                }, (error) => console.error("Sync Error: Transactions", error));
+                // Transactions (Small & Critical - Always Load)
+                const unsubTrans = getCollection('transactions')
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        // USE HELPER FOR SORTING
+                        data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
+                        setTransactions(data);
+                        setDbReady(true);
+                    }, (error) => console.error("Sync Error: Transactions", error));
 
                 // NEW: Sync Expenses
-                const unsubExpenses = getCollection('expenses').onSnapshot((snapshot) => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
-                    setExpenses(data);
-                }, (error) => console.error("Sync Error: Expenses", error));
+                const unsubExpenses = getCollection('expenses')
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
+                        setExpenses(data);
+                    }, (error) => console.error("Sync Error: Expenses", error));
 
-                const unsubUsers = getCollection('users').onSnapshot(async (snapshot) => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    if (data.length === 0) seedDefaultUsers(db, basePath);
-                    // Hash check update logic kept but shortened for brevity
-                    setUsers(data);
-                }, (error) => console.error("Sync Error: Users", error));
+                // Users (Small - Always Load)
+                const unsubUsers = getCollection('users')
+                    .onSnapshot(async (snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        const userColl = getCollection('users');
+                        
+                        if (data.length === 0) {
+                            seedDefaultUsers(db, basePath);
+                            return; 
+                        }
+                        setUsers(data);
 
-                const unsubTherapists = getCollection('therapists').onSnapshot((snapshot) => setTherapistsList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => a.name.localeCompare(b.name))));
-                const unsubServices = getCollection('services').onSnapshot((snapshot) => setServicesList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => a.name.localeCompare(b.name))));
-                const unsubDurations = getCollection('durations').onSnapshot((snapshot) => setDurationsList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => (parseInt(a.name) || 0) - (parseInt(b.name) || 0))));
+                    }, (error) => console.error("Sync Error: Users", error));
 
-                return () => { unsubTrans(); unsubExpenses(); unsubUsers(); unsubTherapists(); unsubServices(); unsubDurations(); };
+                // Therapists
+                const unsubTherapists = getCollection('therapists')
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setTherapistsList(data.sort((a, b) => a.name.localeCompare(b.name)));
+                    }, (error) => console.error("Sync Error: Therapists", error));
+
+                // Services
+                const unsubServices = getCollection('services')
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setServicesList(data.sort((a, b) => a.name.localeCompare(b.name)));
+                    }, (error) => console.error("Sync Error: Services", error));
+
+                // Durations
+                const unsubDurations = getCollection('durations')
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        
+                        // Sort based on numeric value if possible, else string
+                        setDurationsList(data.sort((a, b) => {
+                            const valA = parseInt(a.name) || 0;
+                            const valB = parseInt(b.name) || 0;
+                            return valA - valB;
+                        }));
+                    }, (error) => console.error("Sync Error: Durations", error));
+
+
+                return () => { 
+                    unsubTrans(); 
+                    unsubExpenses();
+                    unsubUsers(); 
+                    unsubTherapists(); 
+                    unsubServices();
+                    unsubDurations();
+                };
             }, [fb, fbUser]);
 
+            // --- 2b. LAZY LOAD HISTORY (Only when View is 'history') ---
+            // This prevents the app from crashing on load by avoiding fetching the massive history collection unnecessarily.
             useEffect(() => {
-                if (!fb || !fbUser || view !== 'history') { if (history.length > 0) setHistory([]); return; }
+                // If we are not in history view, clear memory and do nothing
+                if (!fb || !fbUser || view !== 'history') {
+                    if (history.length > 0) setHistory([]); // Free up memory
+                    return;
+                }
+                
                 const { db, appId } = fb;
                 const basePath = `artifacts/${appId}/public/data`;
-                const unsub = db.collection(`${basePath}/history`).onSnapshot((snapshot) => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    data.sort((a, b) => getMillis(b.timestamp_val) - getMillis(a.timestamp_val));
-                    setHistory(data);
-                });
-                return () => unsub();
-            }, [fb, fbUser, view]);
+                
+                // No complex queries used here to maintain stability, but we now control *when* it loads.
+                const unsub = db.collection(`${basePath}/history`)
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        data.sort((a, b) => getMillis(b.timestamp_val) - getMillis(a.timestamp_val));
+                        setHistory(data);
+                    }, (error) => {
+                        console.error("Sync Error: History", error);
+                    });
 
+                return () => unsub();
+            }, [fb, fbUser, view]); // Re-run when view changes
+
+            // --- 2c. REAL-TIME USER ROLE SYNC ---
+            // Ensure that if the Admin changes my role while I'm logged in, I see the changes immediately.
             useEffect(() => {
                 if (user && users.length > 0) {
                     const freshData = users.find(u => u.id === user.id);
-                    if (freshData && (freshData.role !== user.role || freshData.name !== user.name)) {
-                        const updatedUser = { ...freshData, currentBranch: user.currentBranch };
-                        setUser(updatedUser);
-                        localStorage.setItem('spa_user', JSON.stringify(updatedUser));
+                    if (freshData) {
+                        // Check if relevant fields changed (role, name, username)
+                        if (freshData.role !== user.role || freshData.name !== user.name || freshData.username !== user.username) {
+                            const updatedUser = { ...freshData, currentBranch: user.currentBranch };
+                            setUser(updatedUser);
+                            localStorage.setItem('spa_user', JSON.stringify(updatedUser));
+                        }
                     }
                 }
             }, [users, user]);
             
+            // --- 2d. PRESENCE SYSTEM (HEARTBEAT) ---
             useEffect(() => {
                 if (!user || !fb) return;
+                
                 const updatePresence = () => {
                     const basePath = `artifacts/${fb.appId}/public/data`;
-                    fb.db.collection(`${basePath}/users`).doc(user.id).update({ lastActive: firebase.firestore.FieldValue.serverTimestamp(), currentBranch: user.currentBranch }).catch(err => console.error("Presence update failed", err));
+                    // ALSO Update current branch here to keep it fresh in DB
+                    fb.db.collection(`${basePath}/users`).doc(user.id).update({
+                        lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+                        currentBranch: user.currentBranch // Ensure DB knows where they are
+                    }).catch(err => console.error("Presence update failed", err));
                 };
-                updatePresence();
-                const interval = setInterval(updatePresence, 60000);
+
+                updatePresence(); // Run immediately on login/load
+                const interval = setInterval(updatePresence, 60000); // Run every minute
+
                 return () => clearInterval(interval);
             }, [user, fb]);
 
+            // Helper: Check if a user is online (active in last 2 minutes)
             const isUserOnline = (lastActive) => {
                 if (!lastActive) return false;
                 const diff = Date.now() - getMillis(lastActive);
-                return diff < 2 * 60 * 1000;
+                return diff < 2 * 60 * 1000; // 2 minutes threshold
             };
 
-            // --- Data Helpers ---
-            const seedDefaultUsers = async (db, basePath) => { /* ... same seed logic ... */ }; // Kept for brevity
-            useEffect(() => { if (view === 'profile' && user) setProfileData({ username: user.username, pin: '' }); }, [view, user]);
-            useEffect(() => { if (user && formData.targetBranch === '' && user.currentBranch !== 'ALL') setFormData(prev => ({ ...prev, targetBranch: user.currentBranch })); }, [user]);
-            useEffect(() => { if (user && expenseForm.targetBranch === '' && user.currentBranch !== 'ALL') setExpenseForm(prev => ({ ...prev, targetBranch: user.currentBranch })); }, [user]);
 
-            const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
-            const formatDate = (ts) => { const m = getMillis(ts); return m ? new Date(m).toLocaleDateString() : 'N/A'; };
+            // --- 3. HELPERS ---
             
+            const seedDefaultUsers = async (db, basePath) => {
+                const defaults = [
+                    { name: 'Owner Admin', username: 'admin', pin: '8888', role: 'admin' },
+                    { name: 'Morning Rec.', username: 'morning', pin: '1111', role: 'staff' },
+                    { name: 'Night Rec.', username: 'night', pin: '2222', role: 'staff' }
+                ];
+                const userColl = db.collection(`${basePath}/users`);
+                const usersToSeed = await Promise.all(defaults.map(async u => {
+                    const hashedPin = await hashPin(u.pin);
+                    return { ...u, pin: hashedPin }; 
+                }));
+                for (const u of usersToSeed) await userColl.add(u);
+            };
+
+            useEffect(() => {
+                if (view === 'profile' && user) {
+                    const freshUser = users.find(u => u.id === user.id) || user;
+                    setProfileData({ username: freshUser.username, pin: '' }); 
+                }
+            }, [view, user, users]);
+
+            // Update form data's targetBranch when user or branch changes
+            useEffect(() => {
+                if (user && formData.targetBranch === '' && user.currentBranch !== 'ALL') {
+                    setFormData(prev => ({ ...prev, targetBranch: user.currentBranch }));
+                }
+            }, [user]);
+            
+            // Also update Expense form target branch
+             useEffect(() => {
+                if (user && expenseForm.targetBranch === '' && user.currentBranch !== 'ALL') {
+                    setExpenseForm(prev => ({ ...prev, targetBranch: user.currentBranch }));
+                }
+            }, [user]);
+
+            const formatCurrency = (val) => {
+                if (val === undefined || val === null || val === '') return '';
+                return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+            };
+            
+            // Updated to handle Firestore Timestamps
+            const formatDate = (timestamp) => {
+                const millis = getMillis(timestamp);
+                if (!millis) return 'N/A';
+                const date = new Date(millis);
+                return date.toLocaleDateString();
+            };
+            
+            // Filter Transactions by Branch AND My Shift Toggle
             const getFilteredData = (dataCollection) => {
                 if (!user) return [];
                 let data = dataCollection;
-                if (user.currentBranch !== 'ALL') data = data.filter(t => t.branch === user.currentBranch);
-                if (showMyShift && user.role !== 'admin' && dataCollection === transactions) data = data.filter(t => t.recordedBy === user.name);
+
+                // 1. Filter by Branch (if not ALL)
+                if (user.currentBranch !== 'ALL') {
+                    data = data.filter(t => t.branch === user.currentBranch);
+                }
+
+                // 2. Filter by User (if My Shift is toggled AND user is staff AND it's the transactions list)
+                if (showMyShift && user.role !== 'admin' && dataCollection === transactions) {
+                    data = data.filter(t => t.recordedBy === user.name);
+                }
+                
                 return data;
             };
 
@@ -519,74 +916,195 @@
                 const sales = filteredTransactions.filter(t => t.status === 'completed').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 const pending = filteredTransactions.filter(t => t.status === 'pending').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 const expenseTotal = filteredExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
-                return { totalRevenue: sales, pendingValue: pending, totalExpenses: expenseTotal, netCash: sales - expenseTotal };
+                
+                return { 
+                    totalRevenue: sales, 
+                    pendingValue: pending, 
+                    totalExpenses: expenseTotal, 
+                    netCash: sales - expenseTotal // Simple Net Cash formula
+                };
             }, [filteredTransactions, filteredExpenses]);
 
+            // Therapist Stats by Branch
             const therapistStats = useMemo(() => {
                 const grouped = {};
+                
                 filteredTransactions.forEach(t => {
                     const branch = t.branch || (user.currentBranch !== 'ALL' ? user.currentBranch : 'Unknown');
                     const name = t.therapist ? t.therapist.trim() : 'Unassigned';
+                    
                     if (!name) return;
+
                     if (!grouped[branch]) grouped[branch] = {};
                     if (!grouped[branch][name]) grouped[branch][name] = { name, count: 0, amount: 0 };
+                    
                     grouped[branch][name].count++;
                     grouped[branch][name].amount += Number(t.amount);
                 });
+
                 const result = {};
-                Object.keys(grouped).forEach(branch => { result[branch] = Object.values(grouped[branch]).sort((a, b) => b.count - a.count); });
+                Object.keys(grouped).forEach(branch => {
+                    result[branch] = Object.values(grouped[branch]).sort((a, b) => b.count - a.count);
+                });
+                
                 return result;
             }, [filteredTransactions, user]);
             
+            // Filtered History Logic (for Admin view)
             const filteredHistory = useMemo(() => {
                 let data = history;
-                if (historyStartDate) data = data.filter(h => getMillis(h.timestamp_val) >= new Date(historyStartDate).getTime());
-                if (historyEndDate) {
-                    const endTs = new Date(historyEndDate); endTs.setDate(endTs.getDate() + 1);
-                    data = data.filter(h => getMillis(h.timestamp_val) < endTs.getTime());
+
+                if (historyStartDate) {
+                    const startTimestamp = new Date(historyStartDate).getTime();
+                    data = data.filter(h => getMillis(h.timestamp_val) >= startTimestamp);
                 }
+
+                if (historyEndDate) {
+                    const endTimestamp = new Date(historyEndDate);
+                    endTimestamp.setDate(endTimestamp.getDate() + 1); 
+                    const endTimestampVal = endTimestamp.getTime();
+                    data = data.filter(h => getMillis(h.timestamp_val) < endTimestampVal);
+                }
+
                 return data;
             }, [history, historyStartDate, historyEndDate]);
 
+
             const downloadCSV = (record) => {
                 const headers = ['Date', 'Branch', 'Time', 'Type', 'Client/Desc', 'Service/Item', 'Therapist', 'Amount', 'Status', 'Recorded By'];
-                // Transactions
-                const txRows = record.transactions.map(t => [`"${record.date}"`, `"${t.branch||'N/A'}"`, `"${t.time}"`, '"Sale"', `"${t.clientName}"`, `"${t.service}"`, `"${t.therapist}"`, t.amount, t.status, `"${t.recordedBy||''}"`]);
-                // Expenses
-                const exRows = (record.expenses || []).map(e => [`"${record.date}"`, `"${e.branch||'N/A'}"`, `"${new Date(getMillis(e.timestamp)).toLocaleTimeString()}"`, '"Expense"', `"${e.description}"`, '"-"', '"-"', -Math.abs(e.amount), '"Paid"', `"${e.recordedBy||''}"`]);
                 
-                const csvContent = [headers.join(','), ...txRows.map(r=>r.join(',')), ...exRows.map(r=>r.join(','))].join('\n');
+                // Transactions Rows
+                const txRows = record.transactions.map(t => [
+                    `"${record.date}"`, 
+                    `"${t.branch || 'N/A'}"`, 
+                    `"${t.time}"`, 
+                    '"Sale"',
+                    `"${t.clientName}"`, 
+                    `"${t.service}"`, 
+                    `"${t.therapist}"`, 
+                    t.amount, 
+                    t.status, 
+                    `"${t.recordedBy || ''}"`
+                ]);
+
+                // Expenses Rows
+                const exRows = (record.expenses || []).map(e => [
+                    `"${record.date}"`, 
+                    `"${e.branch || 'N/A'}"`, 
+                    `"${new Date(getMillis(e.timestamp)).toLocaleTimeString()}"`, 
+                    '"Expense"',
+                    `"${e.description}"`, 
+                    '"-"', 
+                    '"-"', 
+                    -Math.abs(e.amount), // Negative amount for expenses
+                    '"Paid"', 
+                    `"${e.recordedBy || ''}"`
+                ]);
+                
+                const csvContent = [headers.join(','), ...txRows.map(r => r.join(',')), ...exRows.map(r => r.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = `Report_${record.date.replace(/,/g,'').replace(/ /g,'_')}.csv`;
+                link.download = `Report_${record.date.replace(/,/g, '').replace(/ /g, '_')}.csv`;
                 link.click();
             };
 
-            // --- Actions ---
-            // ... (List Management, User Mgmt same as before) ...
-            const handleAddItem = async (listType, itemName, itemPrices) => { /* ... same ... */ 
-                if(!itemName) return; const basePath=`artifacts/${fb.appId}/public/data`; let col=''; let d={name:itemName.trim()}; if(listType==='therapist') col='therapists'; else if(listType==='service'){ col='services'; if(itemPrices) d.prices=itemPrices; } else col='durations';
-                await fb.db.collection(`${basePath}/${col}`).add(d);
+
+            // --- 4. ACTIONS ---
+
+            // List Management Handlers
+            const handleAddItem = async (listType, itemName, extraData) => {
+                if (!itemName) return;
+
+                const basePath = `artifacts/${fb.appId}/public/data`;
+                let collectionName = '';
+                let data = { name: itemName.trim() };
+                
+                if (listType === 'therapist') {
+                    collectionName = 'therapists';
+                    // Add commission if provided
+                    if (extraData) data.commission = extraData;
+                } else if (listType === 'service') {
+                    collectionName = 'services';
+                    // Add prices map if provided
+                    if (extraData) data.prices = extraData;
+                } else if (listType === 'duration') {
+                    collectionName = 'durations';
+                } else {
+                    return;
+                }
+                
+                await fb.db.collection(`${basePath}/${collectionName}`).add(data);
             };
-            const handleDeleteItem = (t, i) => { 
-                let col=''; if(t==='therapist') col='therapists'; else if(t==='service') col='services'; else col='durations';
-                setModal({isOpen:true, type:'confirm', title:`Delete ${t}?`, message:'Sure?', confirmColor:'red', onConfirm:async()=>{await fb.db.collection(`artifacts/${fb.appId}/public/data/${col}`).doc(i).delete(); closeModal();} });
+
+            const handleDeleteItem = (listType, id, name) => {
+                let collectionName = '';
+                if (listType === 'therapist') collectionName = 'therapists';
+                else if (listType === 'service') collectionName = 'services';
+                else if (listType === 'duration') collectionName = 'durations';
+                else return;
+
+                setModal({
+                    isOpen: true, type: 'confirm', title: `Delete ${listType}?`, message: `Are you sure?`, confirmColor: 'red',
+                    onConfirm: async () => {
+                        await fb.db.collection(`artifacts/${fb.appId}/public/data/${collectionName}`).doc(id).delete();
+                        closeModal();
+                    }
+                });
             };
-            const handleEditItem = async (t, i, d) => {
-                let col=''; if(t==='therapist') col='therapists'; else if(t==='service') col='services'; else col='durations';
-                await fb.db.collection(`artifacts/${fb.appId}/public/data/${col}`).doc(i).update(d); closeModal();
+
+            const handleEditItem = async (listType, id, updatedData) => {
+                let collectionName = '';
+                if (listType === 'therapist') collectionName = 'therapists';
+                else if (listType === 'service') collectionName = 'services';
+                else if (listType === 'duration') collectionName = 'durations';
+                else return;
+
+                await fb.db.collection(`artifacts/${fb.appId}/public/data/${collectionName}`).doc(id).update(updatedData);
+                closeModal();
             };
-            
-            const calculatePrice = (sName, dName) => {
-                if (!sName) return '';
-                const s = servicesList.find(x => x.name === sName);
-                if (!s) return '';
-                if (dName && s.prices && s.prices[dName]) return s.prices[dName];
-                return s.price || '';
+
+            // HELPER: Calculate Price
+            const calculatePrice = (serviceName, durationName) => {
+                if (!serviceName) return '';
+                
+                const foundService = servicesList.find(s => s.name === serviceName);
+                if (!foundService) return '';
+
+                // 1. Try to find exact duration price
+                if (durationName && foundService.prices && foundService.prices[durationName]) {
+                    return foundService.prices[durationName];
+                } 
+                
+                // 2. Fallback to base price (if any legacy price exists)
+                if (foundService.price) {
+                    return foundService.price;
+                }
+
+                return '';
             };
-            const handleServiceChange = (v) => { const p = calculatePrice(v, formData.duration); setFormData({...formData, service:v, amount:p}); };
-            const handleDurationChange = (v) => { const p = calculatePrice(formData.service, v); setFormData({...formData, duration:v, amount:p}); };
+
+            const handleServiceChange = (serviceName) => {
+                // Calculate price based on this NEW service + EXISTING duration
+                const newPrice = calculatePrice(serviceName, formData.duration);
+                
+                setFormData({ 
+                    ...formData, 
+                    service: serviceName,
+                    amount: newPrice 
+                });
+            };
+
+            const handleDurationChange = (durationName) => {
+                // Calculate price based on EXISTING service + NEW duration
+                const newPrice = calculatePrice(formData.service, durationName);
+
+                setFormData({ 
+                    ...formData, 
+                    duration: durationName,
+                    amount: newPrice 
+                });
+            };
 
             // NEW: Submit Expense
             const handleExpenseSubmit = async (e) => {
@@ -621,140 +1139,474 @@
                 } catch(err) { setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to save expense.', confirmColor: 'red', onConfirm: closeModal }); } 
                 finally { setIsGlobalLoading(false); }
             };
-            
-            // Updated Transaction Submit to handle Offline Queue properly
-            const handleSubmit = async (e) => { /* ... same logic as previous, adding collectionType: 'transactions' for offline queue ... */ 
+
+            const handleSubmit = async (e) => {
                 e.preventDefault();
-                const branch = user.currentBranch === 'ALL' ? formData.targetBranch : user.currentBranch;
-                if (!formData.clientName || !formData.amount || !formData.service || !formData.therapist) { setModal({ isOpen:true, type:'alert', title:'Missing Info', message:'Check fields.', confirmColor:'red', onConfirm:closeModal }); return; }
-                if (user.currentBranch==='ALL' && !formData.targetBranch) { setModal({ isOpen:true, type:'alert', title:'Missing Branch', message:'Select branch.', confirmColor:'red', onConfirm:closeModal }); return; }
+                const transactionBranch = user.currentBranch === 'ALL' ? formData.targetBranch : user.currentBranch;
+
+                if (!formData.clientName || !formData.amount || !formData.service || !formData.therapist) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please ensure Client Name, Service, Therapist, and Price are all entered.', onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
                 
-                // Conflict Check (vs online + offline)
-                const allBookings = [...transactions, ...offlineQueue.filter(x => x.collectionType !== 'expenses')];
-                const isConflict = allBookings.some(t => t.therapist === formData.therapist && t.time === formData.time);
-                if (isConflict) { setModal({ isOpen:true, type:'alert', title:'Conflict', message:'Therapist busy.', confirmColor:'red', onConfirm:closeModal }); return; }
-
-                const payload = { ...formData, amount: parseFloat(formData.amount), status: formData.type==='sale'?'completed':'pending', recordedBy: user.name, branch: branch, collectionType: 'transactions' };
-
-                if (!isOnline) {
-                    setOfflineQueue(prev => [...prev, { ...payload, localId: Date.now(), timestamp: Date.now() }]);
-                    setFormData({ clientName:'', service:'', duration:'', therapist:'', amount:'', type:'booking', time:new Date().toTimeString().slice(0,5), targetBranch:branch });
-                    setModal({ isOpen:true, type:'alert', title:'Offline', message:'Queued.', confirmColor:'orange', onConfirm:closeModal });
+                if (user.currentBranch === 'ALL' && !formData.targetBranch) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Missing Branch', message: 'Please select a Target Branch for this booking.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
 
+                // VALIDATION: Check for conflicts (Same Therapist at Exact Same Time)
+                // We need to check BOTH transactions (synced) AND offlineQueue (unsynced)
+                const allBookings = [...transactions, ...offlineQueue.filter(x => x.collectionType !== 'expenses')];
+                
+                const isConflict = allBookings.some(t => 
+                    t.therapist === formData.therapist && 
+                    t.time === formData.time &&
+                    // Assuming therapists are branch-agnostic for validation (they can't be in two places at once)
+                    true
+                );
+
+                if (isConflict) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Booking Conflict', message: `Therapist ${formData.therapist} is already booked at ${formData.time}.`, onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
+
+                // OFFLINE HANDLING
+                if (!isOnline) {
+                    const newOfflineItem = {
+                        ...formData,
+                        amount: parseFloat(formData.amount),
+                        status: formData.type === 'sale' ? 'completed' : 'pending',
+                        recordedBy: user.name,
+                        branch: transactionBranch,
+                        localId: Date.now(), // Temp ID
+                        timestamp: Date.now(), // Local timestamp
+                        collectionType: 'transactions'
+                    };
+                    setOfflineQueue(prev => [...prev, newOfflineItem]);
+                    
+                    // Reset Form
+                    const resetTargetBranch = user.currentBranch === 'ALL' ? transactionBranch : user.currentBranch;
+                    setFormData({ 
+                        clientName: '', service: '', duration: '', therapist: '', amount: '', 
+                        type: 'booking', time: new Date().toTimeString().slice(0, 5), targetBranch: resetTargetBranch
+                    });
+
+                    setModal({ isOpen: true, type: 'alert', title: 'Saved Offline', message: 'Booking queued. Will sync when online.', onConfirm: closeModal, confirmColor: 'orange' });
+                    return;
+                }
+
+                // ONLINE HANDLING
                 setIsGlobalLoading(true);
                 try {
                     const basePath = `artifacts/${fb.appId}/public/data`;
-                    delete payload.collectionType;
-                    await fb.db.collection(`${basePath}/transactions`).add({ ...payload, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-                    setFormData({ clientName:'', service:'', duration:'', therapist:'', amount:'', type:'booking', time:new Date().toTimeString().slice(0,5), targetBranch:branch });
-                    setModal({ isOpen:true, type:'alert', title:'Saved', message:'Booking recorded.', confirmColor:'logo-green', onConfirm:closeModal });
+                    await fb.db.collection(`${basePath}/transactions`).add({
+                        ...formData,
+                        amount: parseFloat(formData.amount),
+                        status: formData.type === 'sale' ? 'completed' : 'pending',
+                        recordedBy: user.name,
+                        branch: transactionBranch, 
+                        // SECURE: Use Server Timestamp instead of Client Date
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    const resetTargetBranch = user.currentBranch === 'ALL' ? transactionBranch : user.currentBranch;
+                    
+                    setFormData({ 
+                        clientName: '', 
+                        service: '', 
+                        duration: '',
+                        therapist: '', 
+                        amount: '', 
+                        type: 'booking', 
+                        time: new Date().toTimeString().slice(0, 5),
+                        targetBranch: resetTargetBranch
+                    });
+                    
+                    setModal({ isOpen: true, type: 'alert', title: 'Booking Saved!', message: `${formData.clientName} recorded for ${transactionBranch}.`, onConfirm: closeModal, confirmColor: 'logo-green' });
+
                     setView('dashboard');
-                } catch(err) { setModal({ isOpen:true, type:'alert', title:'Error', message:'Failed.', confirmColor:'red', onConfirm:closeModal }); }
-                finally { setIsGlobalLoading(false); }
+                } catch (error) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to save booking. Please check connection.', onConfirm: closeModal, confirmColor: 'red' });
+                } finally {
+                    setIsGlobalLoading(false);
+                }
+            };
+
+            const toggleStatus = async (t) => {
+                const basePath = `artifacts/${fb.appId}/public/data`;
+                const newStatus = t.status === 'pending' ? 'completed' : 'pending';
+                // Optimistic or silent update is usually fine here, but let's wrap for safety if requested
+                setIsGlobalLoading(true);
+                try {
+                    await fb.db.collection(`${basePath}/transactions`).doc(t.id).update({ status: newStatus });
+                } catch(err) {
+                    console.error("Status toggle failed");
+                } finally {
+                    setIsGlobalLoading(false);
+                }
             };
 
             const handleDeleteExpense = (id) => {
-                if (user?.role !== 'admin') return;
-                setModal({ isOpen:true, type:'confirm', title:'Delete Expense?', message:'Remove record?', confirmColor:'red', onConfirm:async()=>{
-                    await fb.db.collection(`artifacts/${fb.appId}/public/data/expenses`).doc(id).delete(); closeModal();
-                }});
+                if (user?.role !== 'admin') {
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can delete.', onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
+                setModal({
+                    isOpen: true, type: 'confirm', title: 'Delete Expense?', message: 'Remove this record?', confirmColor: 'red',
+                    onConfirm: async () => {
+                        closeModal();
+                        setIsGlobalLoading(true);
+                        try {
+                            await fb.db.collection(`artifacts/${fb.appId}/public/data/expenses`).doc(id).delete();
+                        } catch(err) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Delete failed.', confirmColor: 'red', onConfirm: closeModal });
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
+                    }
+                });
+            };
+
+            const requestDelete = (id) => {
+                if (user?.role !== 'admin') {
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can delete.', onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
+                setModal({
+                    isOpen: true, type: 'confirm', title: 'Delete Record?', message: 'Permanently remove from cloud?', confirmColor: 'red',
+                    onConfirm: async () => {
+                        closeModal();
+                        setIsGlobalLoading(true);
+                        try {
+                            const basePath = `artifacts/${fb.appId}/public/data`;
+                            await fb.db.collection(`${basePath}/transactions`).doc(id).delete();
+                        } catch(err) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Delete failed.', confirmColor: 'red', onConfirm: closeModal });
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
+                    }
+                });
             };
 
             const requestEndDay = () => {
-                if (user?.role !== 'admin') { setModal({ isOpen:true, type:'alert', title:'Denied', message:'Admins only.', confirmColor:'red', onConfirm:closeModal }); return; }
-                // Allow end day even if only expenses exist
-                if (filteredTransactions.length === 0 && filteredExpenses.length === 0) { setModal({ isOpen:true, type:'alert', title:'Empty', message:'No data to save.', confirmColor:'logo-green', onConfirm:closeModal }); return; }
+                if (user?.role !== 'admin') {
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can close the day.', onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
+                if (filteredTransactions.length === 0 && filteredExpenses.length === 0) {
+                    setModal({ isOpen: true, type: 'alert', title: 'No Data', message: 'Nothing to save for this branch.', onConfirm: closeModal, confirmColor: 'logo-green' });
+                    return;
+                }
 
-                setModal({ isOpen:true, type:'confirm', title:'End Day & Archive?', message:'This saves all Bookings AND Expenses to history and clears the board.', confirmColor:'logo-green', onConfirm:async()=>{
-                    closeModal(); setIsGlobalLoading(true);
+                setModal({
+                    isOpen: true, type: 'confirm', title: 'Archive & Start New Day?', message: `This will MOVE all active bookings AND expenses to the History tab and clear the dashboard for tomorrow.`, confirmColor: 'logo-green',
+                    onConfirm: async () => {
+                        closeModal();
+                        setIsGlobalLoading(true);
+                        try {
+                            const basePath = `artifacts/${fb.appId}/public/data`;
+                            const historyColl = fb.db.collection(`${basePath}/history`);
+                            const transColl = fb.db.collection(`${basePath}/transactions`);
+                            const expColl = fb.db.collection(`${basePath}/expenses`);
+
+                            // Add to History
+                            await historyColl.add({
+                                date: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+                                timestamp: new Date().toLocaleString(),
+                                // SECURE: Use Server Timestamp
+                                timestamp_val: firebase.firestore.FieldValue.serverTimestamp(),
+                                transactions: filteredTransactions,
+                                expenses: filteredExpenses, // SAVE EXPENSES TOO
+                                stats: stats,
+                                branch: user.currentBranch,
+                                closedBy: user.name
+                            });
+
+                            // Delete transactions
+                            const deleteTxPromises = filteredTransactions.map(t => transColl.doc(t.id).delete());
+                            // Delete expenses
+                            const deleteExPromises = filteredExpenses.map(e => expColl.doc(e.id).delete());
+
+                            await Promise.all([...deleteTxPromises, ...deleteExPromises]);
+
+                            setView('history');
+                        } catch (err) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to end day. Data preserved.', confirmColor: 'red', onConfirm: closeModal });
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
+                    }
+                });
+            };
+
+            // User & Profile Handlers
+            const handleAddUser = async (e) => {
+                e.preventDefault();
+                if (!newUser.name || !newUser.username || !newUser.pin) return;
+                
+                setIsGlobalLoading(true);
+                try {
+                    const hashedPin = await hashPin(newUser.pin);
+                    if (!hashedPin) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'PIN hashing failed. Check PIN length.', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+                    
+                    if (newUser.pin.length !== 4) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: 'Staff and Admin PINs must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+
+                    if (users.some(u => u.username.toLowerCase() === newUser.username.toLowerCase())) { 
+                        setModal({ isOpen: true, type: 'alert', title: 'Username Taken', message: 'This username is already in use.', onConfirm: closeModal, confirmColor: 'red' });
+                        return; 
+                    }
+                    
+                    const basePath = `artifacts/${fb.appId}/public/data`;
+                    
+                    // SMART ADD: Auto-tag with creator's branch if not owner/ALL
+                    const userPayload = { ...newUser, pin: hashedPin };
+                    if (user.currentBranch !== 'ALL') {
+                        userPayload.currentBranch = user.currentBranch;
+                    }
+
+                    await fb.db.collection(`${basePath}/users`).add(userPayload);
+                    setNewUser({ name: '', username: '', pin: '', role: 'staff' });
+                } catch(err) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to add user.', confirmColor: 'red', onConfirm: closeModal });
+                } finally {
+                    setIsGlobalLoading(false);
+                }
+            };
+
+            const handleDeleteUser = (id) => {
+                if (users.length <= 1) { 
+                    setModal({ isOpen: true, type: 'alert', title: 'Action Denied', message: 'Cannot delete the last remaining user.', onConfirm: closeModal, confirmColor: 'red' });
+                    return; 
+                }
+                setModal({ isOpen: true, type: 'confirm', title: 'Remove Staff?', message: 'Revoke access for this user?', confirmColor: 'red', onConfirm: async () => { 
+                    closeModal();
+                    setIsGlobalLoading(true);
                     try {
                         const basePath = `artifacts/${fb.appId}/public/data`;
-                        await fb.db.collection(`${basePath}/history`).add({
-                            date: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-                            timestamp: new Date().toLocaleString(),
-                            timestamp_val: firebase.firestore.FieldValue.serverTimestamp(),
-                            transactions: filteredTransactions,
-                            expenses: filteredExpenses, // Save expenses to history
-                            stats: stats,
-                            branch: user.currentBranch,
-                            closedBy: user.name
-                        });
-                        const txDeletes = filteredTransactions.map(t => fb.db.collection(`${basePath}/transactions`).doc(t.id).delete());
-                        const exDeletes = filteredExpenses.map(e => fb.db.collection(`${basePath}/expenses`).doc(e.id).delete());
-                        await Promise.all([...txDeletes, ...exDeletes]);
-                        setView('history');
-                    } catch(e) { console.error(e); setModal({ isOpen:true, type:'alert', title:'Error', message:'Archive failed.', confirmColor:'red', onConfirm:closeModal }); }
-                    finally { setIsGlobalLoading(false); }
+                        await fb.db.collection(`${basePath}/users`).doc(id).delete(); 
+                    } catch(err) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to delete user.', confirmColor: 'red', onConfirm: closeModal });
+                    } finally {
+                        setIsGlobalLoading(false);
+                    }
                 }});
             };
-            
-            // ... (Keep handleLoginSubmit, handleAddUser, handleDeleteUser, handleToggleRole, handleUpdateProfile, handleResetPin, toggleStatus, requestDelete from previous version) ...
-            // Re-declaring concise versions for context in this block:
-            const handleLoginSubmit = async (e) => { /* ... same logic ... */ 
-                 e.preventDefault(); if(!loginBranch) return; setIsGlobalLoading(true); 
-                 try { const h=await hashPin(loginPin); if(!h) throw new Error(); const u=users.find(x=>x.username.toLowerCase()===loginUsername.toLowerCase() && x.pin===h); 
-                 if(u) { if(loginBranch==='ALL'&&u.username!=='admin') throw new Error('denied'); 
-                 const lu={...u, currentBranch:loginBranch}; await fb.db.collection(`artifacts/${fb.appId}/public/data/users`).doc(u.id).update({currentBranch:loginBranch, lastActive:firebase.firestore.FieldValue.serverTimestamp()});
-                 setUser(lu); localStorage.setItem('spa_user', JSON.stringify(lu)); setLoginUsername(''); setLoginPin(''); setLoginBranch(''); setView('dashboard'); } 
-                 else throw new Error('fail'); } catch(err) { setModal({isOpen:true, type:'alert', title:'Login Error', message:'Invalid credentials or access.', confirmColor:'red', onConfirm:closeModal}); } finally { setIsGlobalLoading(false); }
+
+            // NEW: Owner Toggle Role Function
+            const handleToggleRole = (targetUser) => {
+                const newRole = targetUser.role === 'admin' ? 'staff' : 'admin';
+                const action = newRole === 'admin' ? 'Promote' : 'Demote';
+                
+                setModal({
+                    isOpen: true,
+                    type: 'confirm',
+                    title: `${action} Staff?`,
+                    message: `Are you sure you want to change ${targetUser.name}'s role to ${newRole.toUpperCase()}?`,
+                    confirmColor: 'logo-green',
+                    onConfirm: async () => {
+                        closeModal();
+                        setIsGlobalLoading(true);
+                        try {
+                            const basePath = `artifacts/${fb.appId}/public/data`;
+                            await fb.db.collection(`${basePath}/users`).doc(targetUser.id).update({ role: newRole });
+                        } catch (error) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to update role.', confirmColor: 'red', onConfirm: closeModal });
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
+                    }
+                });
             };
-            const toggleStatus = async (t) => { await fb.db.collection(`artifacts/${fb.appId}/public/data/transactions`).doc(t.id).update({status:t.status==='pending'?'completed':'pending'}); };
-            const requestDelete = (id) => { if(user.role!=='admin') return; setModal({isOpen:true, type:'confirm', title:'Delete?', message:'Sure?', confirmColor:'red', onConfirm:async()=>{await fb.db.collection(`artifacts/${fb.appId}/public/data/transactions`).doc(id).delete(); closeModal();} }); };
-            const handleAddUser = async (e) => { e.preventDefault(); /* ... same logic ... */ if(users.some(x=>x.username===newUser.username)) return; const h=await hashPin(newUser.pin); await fb.db.collection(`artifacts/${fb.appId}/public/data/users`).add({...newUser, pin:h, currentBranch: user.currentBranch!=='ALL'?user.currentBranch:undefined}); setNewUser({name:'',username:'',pin:'',role:'staff'}); };
-            const handleDeleteUser = (id) => { if(users.length<=1) return; setModal({isOpen:true, type:'confirm', title:'Delete Staff?', message:'Sure?', confirmColor:'red', onConfirm:async()=>{await fb.db.collection(`artifacts/${fb.appId}/public/data/users`).doc(id).delete(); closeModal();}}); };
-            const handleToggleRole = (u) => { const nr=u.role==='admin'?'staff':'admin'; setModal({isOpen:true, type:'confirm', title:'Change Role?', message:`${nr.toUpperCase()}?`, confirmColor:'logo-green', onConfirm:async()=>{await fb.db.collection(`artifacts/${fb.appId}/public/data/users`).doc(u.id).update({role:nr}); closeModal();}}); };
-            const handleUpdateProfile = async (e) => { e.preventDefault(); /* ... same ... */ const d={username:profileData.username}; if(profileData.pin){ d.pin=await hashPin(profileData.pin); } await fb.db.collection(`artifacts/${fb.appId}/public/data/users`).doc(user.id).update(d); setUser({...user, ...d}); localStorage.setItem('spa_user', JSON.stringify({...user, ...d})); };
-            const handleResetPin = async (e) => { e.preventDefault(); if(editUserModal.newPin.length!==4) return; const h=await hashPin(editUserModal.newPin); await fb.db.collection(`artifacts/${fb.appId}/public/data/users`).doc(editUserModal.user.id).update({pin:h}); closeModal(); closeEditUserModal(); };
-            const handleDeleteHistory = (id) => { setModal({isOpen:true, type:'confirm', title:'Delete History?', message:'Forever?', confirmColor:'red', onConfirm:async()=>{await fb.db.collection(`artifacts/${fb.appId}/public/data/history`).doc(id).delete(); closeModal();}}); };
+
+            const handleUpdateProfile = async (e) => {
+                e.preventDefault();
+                
+                const newPin = profileData.pin;
+                const updateData = { username: profileData.username };
+
+                setIsGlobalLoading(true);
+                try {
+                    if (newPin && newPin.length > 0) {
+                        // Policy Check: Owner 6 digits, Staff/Admin 4 digits
+                        const requiredLen = user.username === 'admin' ? 6 : 4;
+                        if (newPin.length !== requiredLen) {
+                             setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: `Your PIN must be exactly ${requiredLen} digits.`, onConfirm: closeModal, confirmColor: 'red' });
+                             return;
+                        }
+
+                        const hashedPin = await hashPin(newPin);
+                        if (!hashedPin) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'New PIN hashing failed. Check PIN length.', onConfirm: closeModal, confirmColor: 'red' });
+                            return;
+                        }
+                        updateData.pin = hashedPin;
+                    }
+
+                    if (users.some(u => u.username.toLowerCase() === profileData.username.toLowerCase() && u.id !== user.id)) { 
+                        setModal({ isOpen: true, type: 'alert', title: 'Username Taken', message: 'This username is already in use by another staff.', onConfirm: closeModal, confirmColor: 'red' });
+                        return; 
+                    }
+                    
+                    const basePath = `artifacts/${fb.appId}/public/data`;
+                    await fb.db.collection(`${basePath}/users`).doc(user.id).update(updateData);
+                    
+                    const updatedUser = { ...user, ...updateData };
+                    setUser(updatedUser);
+                    localStorage.setItem('spa_user', JSON.stringify(updatedUser)); // NEW: Update local storage too
+                    setModal({ isOpen: true, type: 'alert', title: 'Updated', message: 'Credentials synced.', onConfirm: closeModal, confirmColor: 'logo-green' });
+                } catch (err) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to update profile.', confirmColor: 'red', onConfirm: closeModal });
+                } finally {
+                    setIsGlobalLoading(false);
+                }
+            };
+            
+            const handleResetPin = async (e) => {
+                e.preventDefault();
+                const targetUser = editUserModal.user;
+                const newPin = editUserModal.newPin;
+
+                if (newPin.length !== 4) {
+                    setModal({ isOpen: true, type: 'alert', title: 'PIN Error', message: 'Staff/Admin PIN must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
+                
+                setIsGlobalLoading(true);
+                try {
+                    const hashedPin = await hashPin(newPin);
+                    if (!hashedPin) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'PIN hashing failed.', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+
+                    const basePath = `artifacts/${fb.appId}/public/data`;
+                    await fb.db.collection(`${basePath}/users`).doc(targetUser.id).update({ pin: hashedPin });
+                    
+                    // Close modal and show success
+                    setEditUserModal({ isOpen: false, user: null, newPin: '' });
+                    setModal({ isOpen: true, type: 'alert', title: 'Success', message: `${targetUser.name}'s PIN has been reset.`, onConfirm: closeModal, confirmColor: 'logo-green' });
+                } catch (error) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to update PIN: ' + error.message, onConfirm: closeModal, confirmColor: 'red' });
+                } finally {
+                    setIsGlobalLoading(false);
+                }
+            };
 
             // --- RENDER ---
-            if (configError) return <div className="min-h-screen flex flex-col items-center justify-center p-4"><div className="bg-white p-8 rounded-xl shadow-lg text-center"><Icons.Cloud size={48} className="mx-auto mb-4 text-slate-400"/><h2 className="text-xl font-bold mb-2">Setup Required</h2><p className="text-xs text-slate-500">{configError}</p></div></div>;
-            if (!dbReady) return <div className="min-h-screen flex flex-col items-center justify-center"><div className="loader mb-4"></div></div>;
 
-            if (!user) return (
-                <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 relative">
-                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center border-t-4 border-logo-green-600">
-                        <div className="w-16 h-16 bg-logo-green-50 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.Lock size={32} className="text-logo-green-700"/></div>
-                        <h1 className="text-2xl font-bold text-logo-green-900 mb-1">At HOME Spa</h1>
-                        <p className="text-slate-400 text-sm mb-6">Staff Portal</p>
-                        <form onSubmit={handleLoginSubmit} className="space-y-4">
-                            <div className="relative"><Icons.MapPin size={18} className="absolute left-3 top-3.5 text-slate-400"/><select required value={loginBranch} onChange={(e)=>setLoginBranch(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-logo-green-500 bg-white text-slate-600"><option value="" disabled>Branch</option>{BRANCHES.map(b=><option key={b} value={b}>{b}</option>)}<option value="ALL" className="font-bold">Owner View</option></select></div>
-                            <div className="relative"><Icons.User size={18} className="absolute left-3 top-3.5 text-slate-400"/><input required value={loginUsername} onChange={(e)=>setLoginUsername(e.target.value)} placeholder="Username" className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-logo-green-500"/></div>
-                            <div className="relative"><Icons.Fingerprint size={18} className="absolute left-3 top-3.5 text-slate-400"/><input required type="password" inputMode="numeric" value={loginPin} onChange={(e)=>setLoginPin(e.target.value)} placeholder="PIN" className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-logo-green-500"/></div>
-                            <button className="w-full bg-logo-green-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-logo-green-200 hover:bg-logo-green-700 transition">Login</button>
-                        </form>
+            if (configError) return (
+                <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 text-center p-4">
+                    <div className="bg-white p-8 rounded-xl shadow-lg max-w-md">
+                        <Icons.Cloud size={48} className="mx-auto text-slate-400 mb-4"/>
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">Setup Failed</h2>
+                        <p className="text-slate-500 text-sm mb-6 font-mono bg-slate-50 p-2 rounded border text-left text-xs">{configError}</p>
+                        <p className="text-xs text-slate-400">
+                            Check: 
+                            <ol className="list-decimal text-left pl-6 mt-2 space-y-1">
+                                <li>Did you create the Firestore Database?</li>
+                                <li>Did you enable Anonymous Authentication?</li>
+                                <li>Did you add the Vercel domain to Authorized Domains?</li>
+                            </ol>
+                        </p>
                     </div>
-                    {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
-                    {isGlobalLoading && <LoadingOverlay message="Authenticating..." />}
                 </div>
             );
 
+            if (!dbReady) return <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50"><div className="loader mb-4"></div><p className="text-slate-400 text-sm">Connecting to Spa Cloud...</p></div>;
+
+            // LOGIN SCREEN
+            if (!user) {
+                return (
+                    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 fade-in relative">
+                        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm border border-logo-green-100 text-center relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-logo-green-700 to-teal-600"></div>
+                            <div className="w-20 h-20 bg-logo-green-50 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-logo-green-100">
+                                {/* Logo replaced with icon */}
+                                <Icons.Lock size={32} className="text-logo-green-700" />
+                            </div>
+                            <h1 className="text-2xl font-bold text-logo-green-900 mb-1">At HOME Massage & Spa</h1>
+                            <p className="text-slate-500 mb-6 text-sm">Staff Portal</p>
+                            
+                            <form onSubmit={handleLoginSubmit} className="space-y-4">
+                                <div className="relative">
+                                    <Icons.MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" />
+                                    <select required value={loginBranch} onChange={(e)=>setLoginBranch(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-logo-green-700 bg-slate-50 focus:bg-white appearance-none text-slate-600">
+                                        <option value="" disabled>Select Branch Location</option>
+                                        {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                                        <option value="ALL" className="font-bold text-logo-green-700">ALL BRANCHES (Owner View)</option>
+                                    </select>
+                                    <Icons.ChevronDown size={16} className="absolute right-3 top-4 text-slate-400 pointer-events-none"/>
+                                </div>
+                                <div className="relative"><Icons.User size={18} className="absolute left-3 top-3.5 text-slate-400" /><input required value={loginUsername} onChange={(e)=>setLoginUsername(e.target.value)} placeholder="Username" className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-logo-green-700 bg-slate-50 focus:bg-white" /></div>
+                                <div className="relative"><Icons.Fingerprint size={18} className="absolute left-3 top-3.5 text-slate-400" /><input required type="password" inputMode="numeric" value={loginPin} onChange={(e)=>setLoginPin(e.target.value)} placeholder="PIN" className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-logo-green-700 bg-slate-50 focus:bg-white" /></div>
+                                <button className="w-full bg-logo-green-700 text-white font-bold py-3 rounded-xl hover:bg-logo-green-600 transition-all shadow-lg shadow-logo-green-200 mt-2">Login</button>
+                            </form>
+                            {!isOnline && <p className="mt-4 text-xs text-red-400 flex items-center justify-center gap-1"><Icons.WifiOff size={12}/> You are offline</p>}
+                        </div>
+                        {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
+                        {isGlobalLoading && <LoadingOverlay message="Verifying..." />}
+                    </div>
+                );
+            }
+
+            // DASHBOARD
             return (
                 <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 relative fade-in">
                     <header className="bg-white border-b border-logo-green-100 sticky top-0 z-20 shadow-sm">
                         <div className="max-w-3xl mx-auto px-4 py-3 flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg shadow-md ${user.role==='admin'?'bg-logo-green-600':'bg-slate-600'}`}><Icons.Home size={20} className="text-white"/></div>
-                                <div><h1 className="text-lg font-bold text-logo-green-800 leading-tight">At HOME Spa</h1><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-500"><span className="bg-logo-green-50 text-logo-green-700 px-2 py-0.5 rounded">{user.currentBranch}</span><span>{user.name}</span>{offlineQueue.length>0 && <span className="text-orange-500 animate-pulse">{offlineQueue.length} Offline</span>}</div></div>
+                                {/* Logo replaced with icon */}
+                                <div className={`p-2 rounded-lg shadow-md ${user.role==='admin'?'bg-logo-green-700 shadow-logo-green-200':'bg-slate-600 shadow-slate-200'}`}><Icons.Home size={22} className="text-white"/></div>
+                                <div>
+                                    <h1 className="text-lg font-bold text-logo-green-800 leading-tight">At HOME Massage & Spa</h1>
+                                    <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                        <span className="bg-logo-green-100 text-logo-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Icons.MapPin size={10}/> {user.currentBranch}</span>
+                                        <span className="flex items-center gap-1"><Icons.UserCircle2 size={10}/> {user.name}</span>
+                                        {offlineQueue.length > 0 && (
+                                            <span className="bg-orange-100 text-orange-600 px-2 py-0.5 rounded flex items-center gap-1 animate-pulse">
+                                                <Icons.WifiOff size={10}/> {offlineQueue.length} Pending
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <button onClick={()=>{setUser(null); localStorage.removeItem('spa_user'); setView('dashboard');}} className="p-2 text-slate-400 hover:text-red-500"><Icons.LogOut size={20}/></button>
+                            <button onClick={()=>{
+                                setUser(null);
+                                localStorage.removeItem('spa_user');
+                                setView('dashboard');
+                            }} className="p-2 text-slate-400 hover:text-red-500 rounded-lg"><Icons.LogOut size={20}/></button>
                         </div>
                         {!isOnline && <div className="bg-red-500 text-white text-xs text-center py-1">No Internet - Sync Paused</div>}
                     </header>
 
                     <main className="max-w-3xl mx-auto px-4 py-6">
                         <div className="flex p-1 bg-slate-200/60 rounded-xl mb-6 sticky top-[70px] z-10 backdrop-blur-sm overflow-x-auto">
-                            <button onClick={()=>setView('dashboard')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='dashboard'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.LayoutDashboard size={16}/> Daily</button>
-                            <button onClick={()=>setView('add')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='add'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Plus size={16}/> Book</button>
-                            <button onClick={()=>setView('expenses')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='expenses'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Wallet size={16}/> Cost</button>
-                            <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Me</button>
-                            {user.role === 'admin' && <>
-                                <button onClick={()=>setView('lists')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='lists'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.ShieldCheck size={16}/> Lists</button>
-                                <button onClick={()=>setView('team')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='team'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'} relative`}><Icons.Users size={16}/> Team {user.username==='admin' && users.filter(u=>isUserOnline(u.lastActive)).length>0 && <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full"></span>}</button>
-                                <button onClick={()=>setView('history')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-bold rounded-lg flex flex-col items-center justify-center gap-1 ${view==='history'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.History size={16}/> Logs</button>
-                            </>}
+                            <button onClick={()=>setView('dashboard')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='dashboard'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.LayoutDashboard size={16}/> Daily</button>
+                            <button onClick={()=>setView('add')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='add'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Plus size={16}/> Booking</button>
+                            <button onClick={()=>setView('expenses')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expenses'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Wallet size={16}/> Cost</button>
+                            <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
+                            {user.role === 'admin' && (
+                                <>
+                                    <button onClick={()=>setView('lists')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='lists'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.ShieldCheck size={16}/> Lists</button>
+                                    <button onClick={()=>setView('history')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='history'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.History size={16}/> History</button>
+                                    <button onClick={()=>setView('team')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='team'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'} relative`}>
+                                        <Icons.Users size={16}/> Team
+                                        {/* Badge on Navigation Tab */}
+                                        {(() => {
+                                            if (user.username !== 'admin') return null;
+                                            const count = users.filter(u => isUserOnline(u.lastActive)).length;
+                                            return count > 0 ? <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-pulse">{count}</span> : null;
+                                        })()}
+                                    </button>
+                                </>
+                            )}
                         </div>
 
                         {view === 'dashboard' && (
@@ -764,20 +1616,95 @@
                                     <div className="bg-white p-3 rounded-xl shadow-sm border border-red-100"><p className="text-slate-400 text-[10px] font-bold uppercase">Expenses</p><h3 className="text-lg font-bold text-red-600">{formatCurrency(stats.totalExpenses)}</h3></div>
                                     <div className={`p-3 rounded-xl shadow-sm border ${stats.netCash >= 0 ? 'bg-teal-50 border-teal-200' : 'bg-red-50 border-red-200'}`}><p className="text-slate-400 text-[10px] font-bold uppercase">Net Cash</p><h3 className={`text-lg font-bold ${stats.netCash >= 0 ? 'text-teal-700' : 'text-red-700'}`}>{formatCurrency(stats.netCash)}</h3></div>
                                 </div>
-                                
+
                                 <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100">
-                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={14}/> Handles Today</h3>
-                                    {Object.keys(therapistStats).length === 0 ? <p className="text-xs text-slate-400 italic text-center">No data.</p> : Object.keys(therapistStats).sort().map(b=>(<div key={b} className="mb-4 last:mb-0"><h4 className="text-[10px] font-bold text-logo-green-700 uppercase mb-1">{b}</h4>{therapistStats[b].map(s=>(<div key={s.name} className="flex justify-between text-sm py-1 border-b border-slate-50 last:border-0"><span>{s.name}</span><span className="font-bold text-slate-700">{s.count} <span className="text-[10px] font-normal text-slate-400">({formatCurrency(s.amount)})</span></span></div>))}</div>))}
+                                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={16} className="text-logo-green-700"/> Therapist Handles (Today)</h3>
+                                    
+                                    {Object.keys(therapistStats).length === 0 ? (
+                                        <p className="text-sm text-slate-400 italic text-center py-2">No activity yet.</p>
+                                    ) : (
+                                        Object.keys(therapistStats).sort((a, b) => {
+                                             const idxA = BRANCHES.indexOf(a);
+                                             const idxB = BRANCHES.indexOf(b);
+                                             if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+                                             if (idxA === -1) return 1;
+                                             if (idxB === -1) return -1;
+                                             return idxA - idxB;
+                                         }).map(branch => (
+                                            <div key={branch} className="mb-4 last:mb-0">
+                                                {(user.currentBranch === 'ALL' || Object.keys(therapistStats).length > 1) && (
+                                                    <h4 className="text-[10px] font-bold text-logo-green-700 uppercase mb-2 bg-logo-green-50 px-2 py-1 rounded inline-block">
+                                                        {branch}
+                                                    </h4>
+                                                )}
+                                                <div className="space-y-2">
+                                                    {therapistStats[branch].map((s) => (
+                                                        <div key={s.name} className="flex justify-between items-center pb-2 border-b border-slate-50 last:border-0 last:pb-0 ml-1">
+                                                            <div className="flex gap-2 items-center">
+                                                                <span className="w-6 h-6 bg-logo-green-100 text-logo-green-700 rounded-full flex items-center justify-center text-[10px] font-bold">{s.name.charAt(0)}</span>
+                                                                <span className="text-sm font-semibold text-slate-700">{s.name}</span>
+                                                            </div>
+                                                            <div className="text-right flex flex-col">
+                                                                <span className="text-sm font-bold text-logo-green-700">{s.count} <span className="text-[9px] font-normal text-slate-400 uppercase">Handles</span></span>
+                                                                {user.role === 'admin' && <span className="text-[9px] text-slate-400">{formatCurrency(s.amount)}</span>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
 
                                 <div>
                                     <div className="flex justify-between items-center mb-4">
-                                        <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.LayoutDashboard size={18}/> Today's Bookings</h2>
-                                        <div className="flex gap-2">{user.role!=='admin' && <button onClick={()=>setShowMyShift(!showMyShift)} className={`text-[10px] font-bold px-3 py-1.5 rounded-full border transition-colors ${showMyShift?'bg-logo-green-600 text-white':'bg-white text-slate-500'}`}>My Shift</button>}
-                                        {user.role==='admin' && <button onClick={requestEndDay} className="text-[10px] font-bold text-white bg-logo-green-700 px-3 py-1.5 rounded-full shadow-sm hover:bg-logo-green-800">End Day</button>}</div>
+                                        <h2 className="text-lg font-bold text-logo-green-900 flex gap-2">
+                                            <Icons.LayoutDashboard size={18}/> Live Schedule ({showMyShift ? 'My Shift' : user.currentBranch})
+                                        </h2>
+                                        <div className="flex items-center gap-2">
+                                            {user.role !== 'admin' && (
+                                                <button 
+                                                    onClick={() => setShowMyShift(!showMyShift)}
+                                                    className={`text-[10px] font-bold ${showMyShift ? 'bg-logo-green-700 text-white' : 'bg-logo-green-50 text-logo-green-700'} px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1 items-center transition-colors`}
+                                                >
+                                                    <Icons.User size={12}/> {showMyShift ? 'Showing My Shift' : 'Show Only Mine'}
+                                                </button>
+                                            )}
+                                            {user.role === 'admin' && (
+                                                <button onClick={requestEndDay} className="text-[10px] font-bold text-logo-green-700 bg-logo-green-50 px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1"><Icons.Archive size={12}/> End Day</button>
+                                            )}
+                                        </div>
                                     </div>
-                                    {filteredTransactions.length===0 ? <div className="text-center py-8 border border-dashed rounded-xl text-slate-400 text-sm">No bookings yet.</div> : 
-                                    <div className="space-y-3">{filteredTransactions.map(t=>(<div key={t.id} className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400'}`}><div className="flex-1"><div className="flex gap-2 mb-1"><span className="text-[9px] font-bold bg-slate-100 px-1.5 rounded text-slate-500">{t.branch}</span><span className="text-[10px] font-mono text-slate-400">{formatDate(t.timestamp)} {t.time}</span></div><h4 className="font-bold text-sm">{t.clientName}</h4><p className="text-xs text-slate-500">{t.service} {t.duration && `• ${t.duration}`} • {t.therapist}</p></div><div className="text-right"><div className="font-bold text-sm">{formatCurrency(t.amount)}</div><div className="flex justify-end gap-1 mt-1"><button onClick={()=>toggleStatus(t)} className={`p-1 rounded ${t.status==='completed'?'bg-green-100 text-green-700':'bg-orange-100 text-orange-600'}`}>{t.status==='completed'?<Icons.CheckCircle2 size={14}/>:<Icons.DollarSign size={14}/>}</button>{user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14}/></button>}</div></div></div>))}</div>}
+                                    
+                                    {/* Performance Alert */}
+                                    {filteredTransactions.length > 50 && (
+                                        <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 text-sm flex justify-between items-center rounded-r shadow-sm">
+                                            <span><span className="font-bold">Performance Alert:</span> You have {filteredTransactions.length} active bookings. End the day to archive and speed up the app.</span>
+                                            {user.role === 'admin' && <button onClick={requestEndDay} className="underline font-bold hover:text-orange-900 ml-2 whitespace-nowrap">End Day Now</button>}
+                                        </div>
+                                    )}
+
+                                    {filteredTransactions.length===0?<div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No bookings found for the current filter.</div>:
+                                    <div className="space-y-3">
+                                        {filteredTransactions.map(t=>(
+                                            <div key={t.id} className={`bg-white p-4 rounded-xl border-l-[6px] flex justify-between items-center ${t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400'} shadow-sm`}>
+                                                <div className="flex-1">
+                                                    {/* Displaying timestamp date for consistency */}
+                                                    <div className="flex gap-2 mb-1 items-center">
+                                                        <span className="text-[10px] font-bold bg-slate-100 px-2 rounded text-slate-500">{t.branch}</span>
+                                                        <span className="text-xs font-mono text-slate-400">{formatDate(t.timestamp)} - {t.time}</span>
+                                                    </div>
+                                                    <h3 className="font-bold text-slate-800">{t.clientName}</h3>
+                                                    <div className="text-xs text-slate-500 mt-1 flex gap-2 flex-wrap">
+                                                        <span>{t.service}</span>
+                                                        {t.duration && <span> • {t.duration}</span>}
+                                                        <span> • {t.therapist}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right"><div className="font-bold text-lg">{formatCurrency(t.amount)}</div><div className="flex justify-end gap-2 mt-1"><button onClick={()=>toggleStatus(t)} className={`p-1.5 rounded-full ${t.status==='completed'?'bg-logo-green-100 text-logo-green-700':'bg-orange-100 text-orange-600'}`}>{t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}</button>{user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>}</div></div>
+                                            </div>
+                                        ))}
+                                    </div>}
                                 </div>
                             </div>
                         )}
