@@ -25,13 +25,23 @@
 
     <!-- 6. Custom Tailwind Config and Styles -->
     <script>
+        // Custom Tailwind Configuration to use the Logo's Primary Green (#008000)
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        'logo-green': { 50: '#E6FFE6', 100: '#CCFFCC', 500: '#00B300', 600: '#009900', 700: '#008000', 800: '#006600', 900: '#004C00' },
-                        'teal': { 600: '#008080' },
-                        'red': { 50: '#FEF2F2', 100: '#FEE2E2', 500: '#EF4444', 600: '#DC2626', 700: '#B91C1C' }
+                        'logo-green': {
+                            50: '#E6FFE6',      // Very light background
+                            100: '#CCFFCC',     // Light background
+                            500: '#00B300',     // Medium
+                            600: '#009900',     // Primary Button Hover
+                            700: '#008000',     // Base Logo Green / Primary
+                            800: '#006600',     // Darker text/header
+                            900: '#004C00',     // Deepest text
+                        },
+                        'teal': {
+                            600: '#008080', // Keep some teal accent for contrast
+                        }
                     }
                 }
             }
@@ -41,19 +51,38 @@
         body { -webkit-tap-highlight-color: transparent; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #008000; width: 24px; height: 24px; animation: spin 1s linear infinite; }
-        .loader-lg { width: 48px; height: 48px; border-width: 5px; }
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #008000; /* Use logo-green */
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        .loader-lg {
+            width: 48px;
+            height: 48px;
+            border-width: 5px;
+        }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
+    
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
         // --- CONSTANTS ---
-        const BRANCHES = ['Guadalupe', 'Mabolo', 'Talisay', 'Bacayan', 'Lapu-lapu', 'AS Fortuna'];
+        const BRANCHES = [
+            'Guadalupe', 
+            'Mabolo', 
+            'Talisay', 
+            'Bacayan', 
+            'Lapu-lapu', 
+            'AS Fortuna'
+        ];
         
         // --- FIREBASE CONFIGURATION ---
         const MANUAL_FIREBASE_CONFIG = {
@@ -69,16 +98,21 @@
         const firebaseConfig = MANUAL_FIREBASE_CONFIG; 
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+
         // --- ICON COMPONENT ---
         const Icon = ({ name, size = 24, className = "", ...props }) => {
             const wrapperRef = useRef(null);
             useEffect(() => {
                 if (!wrapperRef.current) return;
-                wrapperRef.current.innerHTML = '';
                 const tempIcon = document.createElement('i');
                 tempIcon.setAttribute('data-lucide', name);
+                wrapperRef.current.innerHTML = '';
                 wrapperRef.current.appendChild(tempIcon);
-                lucide.createIcons({ root: wrapperRef.current, nameAttr: 'data-lucide', attrs: { width: size, height: size, class: className, ...props } });
+                lucide.createIcons({
+                    root: wrapperRef.current,
+                    nameAttr: 'data-lucide',
+                    attrs: { width: size, height: size, class: className, ...props }
+                });
             }, [name, size, className]);
             return <span ref={wrapperRef} style={{ display: 'inline-flex', verticalAlign: 'middle' }}></span>;
         };
@@ -121,26 +155,31 @@
             Receipt: (p) => <Icon name="receipt" {...p} />
         };
 
-        // --- HELPERS ---
+        // --- SECURITY HELPER: Hashing Function ---
         const hashPin = async (pin) => {
             if (!pin || pin.length < 4) return null;
             try {
                 const msgUint8 = new TextEncoder().encode(pin);
                 const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
                 const hashArray = Array.from(new Uint8Array(hashBuffer));
-                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            } catch (error) { return null; }
+                const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                return hashHex;
+            } catch (error) {
+                console.error("Hashing failed:", error);
+                return null;
+            }
         };
 
+        // --- SECURITY HELPER: Timestamp Normalizer ---
         const getMillis = (ts) => {
-            if (!ts) return Date.now();
-            if (typeof ts === 'number') return ts;
-            if (typeof ts.toMillis === 'function') return ts.toMillis();
-            if (ts.seconds) return ts.seconds * 1000;
+            if (!ts) return Date.now(); 
+            if (typeof ts === 'number') return ts; 
+            if (typeof ts.toMillis === 'function') return ts.toMillis(); 
+            if (ts.seconds) return ts.seconds * 1000; 
             return 0;
         };
 
-        // --- COMPONENTS ---
+        // --- Loading Component ---
         const LoadingOverlay = ({ message }) => (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm fade-in">
                 <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 min-w-[200px]">
@@ -150,99 +189,317 @@
             </div>
         );
 
-        const AdminResetUserModal = ({ editUserModal, setEditUserModal, handleResetPin }) => {
-            if (!editUserModal.isOpen || !editUserModal.user) return null;
-            const user = editUserModal.user;
-            return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 fade-in">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-sm">
-                        <h3 className="text-xl font-bold text-logo-green-800 mb-4 flex items-center gap-2"><Icons.UserCog size={24}/> Reset Staff Credentials</h3>
-                        <div className="bg-slate-50 p-4 rounded-lg mb-4">
-                            <p className="text-xs text-slate-500 uppercase font-bold">Staff Name:</p><p className="font-bold text-slate-800 text-lg mb-2">{user.name}</p>
-                            <p className="text-xs text-slate-500 uppercase font-bold">Username:</p><p className="font-mono text-logo-green-700 text-sm">@{user.username}</p>
-                        </div>
-                        <form onSubmit={handleResetPin} className="space-y-4">
-                            <label className="block"><span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN (4 Digits)</span><input required type="password" inputMode="numeric" maxLength="4" value={editUserModal.newPin} onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })} placeholder="Enter new 4-digit PIN" className="w-full p-3 border rounded-lg font-mono focus:ring-2 focus:ring-logo-green-500" /></label>
-                            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setEditUserModal({ isOpen: false, user: null, newPin: '' })} className="px-4 py-2 text-slate-500 rounded hover:bg-slate-100">Cancel</button><button type="submit" className="px-4 py-2 rounded text-white bg-logo-green-600 hover:bg-logo-green-700 font-bold">Reset PIN</button></div>
-                        </form>
-                    </div>
-                </div>
-            );
-        };
-
-        const ListManagement = ({ therapists, services, durations, onAdd, onDelete, onEdit }) => {
+        // --- LIST MANAGEMENT COMPONENT (FIXED & STABLE) ---
+        const ListManagement = ({ therapists = [], services = [], durations = [], onAdd, onDelete, onEdit }) => {
             const [activeTab, setActiveTab] = useState('therapist'); 
+            
+            // Add State
             const [newItemName, setNewItemName] = useState('');
             const [newItemPrices, setNewItemPrices] = useState({}); 
             const [newItemCommission, setNewItemCommission] = useState('');
+            
+            // Edit State
             const [editingId, setEditingId] = useState(null);
             const [editName, setEditName] = useState('');
             const [editPrices, setEditPrices] = useState({});
             const [editCommission, setEditCommission] = useState('');
+
             const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
             const closeModal = () => setModal({ ...modal, isOpen: false });
             
-            const handleFormSubmit = (e) => { e.preventDefault(); let extraData = null; if (activeTab === 'service') extraData = newItemPrices; if (activeTab === 'therapist') extraData = newItemCommission; onAdd(activeTab, newItemName, extraData); setNewItemName(''); setNewItemPrices({}); setNewItemCommission(''); };
-            const startEdit = (item) => { setEditingId(item.id); setEditName(item.name); setEditPrices(item.prices || {}); setEditCommission(item.commission || ''); };
-            const cancelEdit = () => { setEditingId(null); setEditName(''); setEditPrices({}); setEditCommission(''); };
-            const saveEdit = () => { const updatedData = { name: editName }; if (activeTab === 'service') updatedData.prices = editPrices; if (activeTab === 'therapist') updatedData.commission = editCommission; onEdit(activeTab, editingId, updatedData); setEditingId(null); };
-            const handlePriceChange = (dName, val, isEdit) => { const setter = isEdit ? setEditPrices : setNewItemPrices; const current = isEdit ? editPrices : newItemPrices; if (!val) { const copy = { ...current }; delete copy[dName]; setter(copy); } else { setter({ ...current, [dName]: parseFloat(val) }); } };
+            const handleFormSubmit = (e) => {
+                e.preventDefault();
+                let extraData = null;
+                if (activeTab === 'service') extraData = newItemPrices;
+                if (activeTab === 'therapist') extraData = newItemCommission;
 
-            let currentList = [], placeholderText = "", icon = null;
-            if (activeTab === 'therapist') { currentList = therapists; placeholderText = "Enter Therapist Name"; icon = <Icons.Users size={18} />; }
-            else if (activeTab === 'service') { currentList = services; placeholderText = "Enter Service Name"; icon = <Icons.Tag size={18} />; }
-            else { currentList = durations; placeholderText = "Enter Duration"; icon = <Icons.Hourglass size={18} />; }
+                onAdd(activeTab, newItemName, extraData);
+                setNewItemName('');
+                setNewItemPrices({});
+                setNewItemCommission('');
+            };
+            
+            const startEdit = (item) => {
+                setEditingId(item.id);
+                setEditName(item.name);
+                setEditPrices(item.prices || {});
+                setEditCommission(item.commission || '');
+            };
+
+            const cancelEdit = () => {
+                setEditingId(null);
+                setEditName('');
+                setEditPrices({});
+                setEditCommission('');
+            };
+
+            const saveEdit = () => {
+                const updatedData = { name: editName };
+                if (activeTab === 'service') {
+                    updatedData.prices = editPrices;
+                }
+                if (activeTab === 'therapist') {
+                    updatedData.commission = editCommission;
+                }
+                onEdit(activeTab, editingId, updatedData);
+                setEditingId(null);
+            };
+
+            const handlePriceChange = (durationName, val, isEdit = false) => {
+                const setter = isEdit ? setEditPrices : setNewItemPrices;
+                const current = isEdit ? editPrices : newItemPrices;
+                
+                if (!val) {
+                    const copy = { ...current };
+                    delete copy[durationName];
+                    setter(copy);
+                } else {
+                    setter({ ...current, [durationName]: parseFloat(val) });
+                }
+            };
+
+            let currentList = [];
+            let placeholderText = "";
+            let icon = null;
+
+            if (activeTab === 'therapist') {
+                currentList = therapists;
+                placeholderText = "Enter Therapist Name";
+                icon = <Icons.Users size={18} />;
+            } else if (activeTab === 'service') {
+                currentList = services;
+                placeholderText = "Enter Service Name (e.g. Swedish)";
+                icon = <Icons.Tag size={18} />;
+            } else {
+                currentList = durations;
+                placeholderText = "Enter Duration (e.g. 60 Mins)";
+                icon = <Icons.Hourglass size={18} />;
+            }
 
             return (
                 <div className="space-y-6 fade-in">
                     <h2 className="text-lg font-bold text-logo-green-800 flex gap-2 items-center"><Icons.ShieldCheck size={18} className="text-logo-green-700"/> Master Data Lists</h2>
+                    
+                    {/* Tabs */}
                     <div className="flex bg-slate-100 p-1 rounded-lg">
-                        <button onClick={() => setActiveTab('therapist')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='therapist' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}><Icons.Users size={14}/> Therapists</button>
-                        <button onClick={() => setActiveTab('duration')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='duration' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}><Icons.Clock size={14}/> Minutes</button>
-                        <button onClick={() => setActiveTab('service')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='service' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}><Icons.Sparkles size={14}/> Services</button>
+                        <button onClick={() => setActiveTab('therapist')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='therapist' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Users size={14}/> Therapists
+                        </button>
+                        <button onClick={() => setActiveTab('duration')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='duration' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Clock size={14}/> Minutes
+                        </button>
+                        <button onClick={() => setActiveTab('service')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='service' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Sparkles size={14}/> Services
+                        </button>
                     </div>
+
+                    {/* Add New Item */}
                     <div className="bg-white rounded-xl shadow-sm border border-logo-green-100 p-6">
                         <h3 className="font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wide text-slate-500"><Icons.Plus size={16}/> Add New {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
                         <form onSubmit={handleFormSubmit} className="flex flex-col gap-3">
                             <div className="flex gap-2">
-                                <input required placeholder={placeholderText} value={newItemName} onChange={e => setNewItemName(e.target.value)} className="flex-1 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"/>
-                                {activeTab === 'therapist' && <input type="number" placeholder="Comm %" value={newItemCommission} onChange={e => setNewItemCommission(e.target.value)} className="w-24 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"/>}
+                                <input 
+                                    required 
+                                    placeholder={placeholderText} 
+                                    value={newItemName} 
+                                    onChange={e => setNewItemName(e.target.value)} 
+                                    className="flex-1 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
+                                />
+                                {activeTab === 'therapist' && (
+                                    <input 
+                                        type="number"
+                                        placeholder="Comm %" 
+                                        value={newItemCommission} 
+                                        onChange={e => setNewItemCommission(e.target.value)} 
+                                        className="w-24 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
+                                    />
+                                )}
                             </div>
+                            
+                            {/* Dynamic Price Inputs for Services */}
                             {activeTab === 'service' && (
                                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                                     <p className="text-xs font-bold text-slate-500 mb-2 uppercase">Set Prices per Duration (Optional)</p>
-                                    {durations.length === 0 && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first.</p>}
-                                    <div className="grid grid-cols-2 gap-2">{durations.map(d => (<div key={d.id} className="flex items-center gap-2 bg-white p-2 border rounded"><span className="text-xs font-bold text-slate-600 whitespace-nowrap w-16">{d.name}:</span><input type="number" placeholder="Price" className="w-full text-sm outline-none" value={newItemPrices[d.name] || ''} onChange={e => handlePriceChange(d.name, e.target.value, false)}/></div>))}</div>
+                                    {(!durations || durations.length === 0) && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first to set prices.</p>}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {durations && durations.map(d => (
+                                            <div key={d.id} className="flex items-center gap-2 bg-white p-2 border rounded">
+                                                <span className="text-xs font-bold text-slate-600 whitespace-nowrap w-16">{d.name}:</span>
+                                                <input 
+                                                    type="number" 
+                                                    placeholder="Price"
+                                                    className="w-full text-sm outline-none"
+                                                    value={newItemPrices[d.name] || ''}
+                                                    onChange={e => handlePriceChange(d.name, e.target.value, false)}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
+
                             <button type="submit" className="w-full bg-logo-green-600 text-white p-3 rounded-lg font-bold hover:bg-logo-green-700 transition shadow-sm">Add to List</button>
                         </form>
                     </div>
+
+                    {/* Current List */}
                     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                        <div className="p-4 bg-logo-green-50 font-bold text-logo-green-800 text-sm border-b border-logo-green-100 flex justify-between items-center"><span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList.length})</span>{icon}</div>
+                        <div className="p-4 bg-logo-green-50 font-bold text-logo-green-800 text-sm border-b border-logo-green-100 flex justify-between items-center">
+                            <span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList ? currentList.length : 0})</span>
+                            {icon}
+                        </div>
+                        
                         <div className="max-h-[400px] overflow-y-auto">
-                            {currentList.length === 0 ? <p className="text-center text-slate-400 p-6 italic">No items found.</p> : currentList.map(item => (
-                                <div key={item.id} className="p-4 border-b flex flex-col gap-2 last:border-b-0 hover:bg-slate-50">
-                                    <div className="flex justify-between items-center w-full">
-                                        {editingId === item.id ? (
-                                            <div className="flex gap-2 flex-1 mr-2">
-                                                <input value={editName} onChange={e => setEditName(e.target.value)} className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"/>
-                                                {activeTab === 'therapist' && <input type="number" placeholder="%" value={editCommission} onChange={e => setEditCommission(e.target.value)} className="w-16 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"/>}
+                            {(!currentList || currentList.length === 0) ? (
+                                <p className="text-center text-slate-400 p-6 italic">No items found.</p>
+                            ) : (
+                                currentList.map(item => (
+                                    <div key={item.id} className="p-4 border-b flex flex-col gap-2 last:border-b-0 hover:bg-slate-50">
+                                        <div className="flex justify-between items-center w-full">
+                                            {editingId === item.id ? (
+                                                <div className="flex gap-2 flex-1 mr-2">
+                                                    <input 
+                                                        value={editName}
+                                                        onChange={e => setEditName(e.target.value)}
+                                                        className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"
+                                                    />
+                                                    {activeTab === 'therapist' && (
+                                                        <input 
+                                                            type="number"
+                                                            placeholder="%"
+                                                            value={editCommission}
+                                                            onChange={e => setEditCommission(e.target.value)}
+                                                            className="w-16 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"
+                                                        />
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-700 font-medium">
+                                                    {item.name}
+                                                    {item.commission && activeTab === 'therapist' && <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">{item.commission}%</span>}
+                                                </span>
+                                            )}
+                                            
+                                            {/* Actions */}
+                                            <div className="flex gap-1">
+                                                {editingId === item.id ? (
+                                                    <>
+                                                        <button onClick={saveEdit} className="text-logo-green-600 hover:bg-logo-green-50 p-2 rounded transition"><Icons.CheckCircle2 size={18}/></button>
+                                                        <button onClick={cancelEdit} className="text-slate-400 hover:bg-slate-100 p-2 rounded transition"><Icons.X size={18}/></button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => startEdit(item)} className="text-slate-300 hover:text-blue-500 p-2 rounded hover:bg-blue-50 transition" title="Edit Item">
+                                                            <Icons.Pencil size={16} />
+                                                        </button>
+                                                        <button type="button" onClick={() => onDelete(activeTab, item.id, item.name)} className="text-slate-300 hover:text-red-500 p-2 rounded hover:bg-red-50 transition" title="Delete Item">
+                                                            <Icons.Trash2 size={16}/>
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
-                                        ) : <span className="text-slate-700 font-medium">{item.name}{item.commission && activeTab === 'therapist' && <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">{item.commission}%</span>}</span>}
-                                        <div className="flex gap-1">
-                                            {editingId === item.id ? <><button onClick={saveEdit} className="text-logo-green-600 hover:bg-logo-green-50 p-2 rounded"><Icons.CheckCircle2 size={18}/></button><button onClick={cancelEdit} className="text-slate-400 hover:bg-slate-100 p-2 rounded"><Icons.X size={18}/></button></> : <><button onClick={() => startEdit(item)} className="text-slate-300 hover:text-blue-500 p-2 rounded hover:bg-blue-50"><Icons.Pencil size={16} /></button><button type="button" onClick={() => onDelete(activeTab, item.id, item.name)} className="text-slate-300 hover:text-red-500 p-2 rounded hover:bg-red-50"><Icons.Trash2 size={16}/></button></>}
                                         </div>
+
+                                        {/* Service Pricing Details (View & Edit) */}
+                                        {activeTab === 'service' && (
+                                            <div className="text-xs text-slate-500 w-full">
+                                                {editingId === item.id ? (
+                                                    <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-100 p-2 rounded">
+                                                        {durations && durations.map(d => (
+                                                            <div key={d.id} className="flex items-center gap-2">
+                                                                <span className="font-bold w-14">{d.name}:</span>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="w-full p-1 border rounded text-xs"
+                                                                    placeholder="0"
+                                                                    value={editPrices[d.name] || ''}
+                                                                    onChange={e => handlePriceChange(d.name, e.target.value, true)}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                        {item.prices && Object.keys(item.prices).length > 0 ? (
+                                                            Object.entries(item.prices).map(([dur, price]) => (
+                                                                <span key={dur} className="bg-logo-green-50 text-logo-green-700 px-2 py-0.5 rounded border border-logo-green-100">
+                                                                    {dur}: <span className="font-bold">P{price}</span>
+                                                                </span>
+                                                            ))
+                                                        ) : (
+                                                            <span className="italic text-slate-300">No specific prices set</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                    {activeTab === 'service' && <div className="text-xs text-slate-500 w-full">{editingId === item.id ? <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-100 p-2 rounded">{durations.map(d => (<div key={d.id} className="flex items-center gap-2"><span className="font-bold w-14">{d.name}:</span><input type="number" className="w-full p-1 border rounded text-xs" placeholder="0" value={editPrices[d.name] || ''} onChange={e => handlePriceChange(d.name, e.target.value, true)}/></div>))}</div> : <div className="flex flex-wrap gap-2 mt-1">{item.prices && Object.keys(item.prices).length > 0 ? Object.entries(item.prices).map(([dur, price]) => (<span key={dur} className="bg-logo-green-50 text-logo-green-700 px-2 py-0.5 rounded border border-logo-green-100">{dur}: <span className="font-bold">P{price}</span></span>)) : <span className="italic text-slate-300">No specific prices set</span>}</div>}</div>}
-                                </div>
-                            ))}
+                                ))
+                            )}
                         </div>
                     </div>
-                    {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
+                      {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
                 </div>
             );
         };
+
+        // --- Admin Reset User Modal ---
+        const AdminResetUserModal = ({ editUserModal, setEditUserModal, handleResetPin }) => {
+            if (!editUserModal.isOpen || !editUserModal.user) return null;
+
+            const user = editUserModal.user;
+            
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 fade-in">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-sm">
+                        <h3 className="text-xl font-bold text-logo-green-800 mb-4 flex items-center gap-2">
+                            <Icons.UserCog size={24}/> Reset Staff Credentials
+                        </h3>
+
+                        <div className="bg-slate-50 p-4 rounded-lg mb-4">
+                            <p className="text-xs text-slate-500 uppercase font-bold">Staff Name:</p>
+                            <p className="font-bold text-slate-800 text-lg mb-2">{user.name}</p>
+
+                            <p className="text-xs text-slate-500 uppercase font-bold">Username:</p>
+                            <p className="font-mono text-logo-green-700 text-sm">@{user.username}</p>
+                        </div>
+
+                        <form onSubmit={handleResetPin} className="space-y-4">
+                            <label className="block">
+                                <span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN (4 Digits)</span>
+                                <input
+                                    required
+                                    type="password"
+                                    inputMode="numeric"
+                                    maxLength="4"
+                                    value={editUserModal.newPin}
+                                    onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })}
+                                    placeholder="Enter new 4-digit PIN"
+                                    className="w-full p-3 border rounded-lg font-mono focus:ring-2 focus:ring-logo-green-500"
+                                />
+                            </label>
+
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setEditUserModal({ isOpen: false, user: null, newPin: '' })} 
+                                    className="px-4 py-2 text-slate-500 rounded hover:bg-slate-100"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="px-4 py-2 rounded text-white bg-logo-green-600 hover:bg-logo-green-700 font-bold"
+                                >
+                                    Reset PIN
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
 
         // --- MAIN APP ---
         const App = () => {
