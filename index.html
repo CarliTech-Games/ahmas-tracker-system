@@ -5,25 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>At HOME Massage & Spa Tracker</title>
     
-    <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 2. React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     
-    <!-- 3. Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- 4. Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- 5. Firebase (Compat Version - CDN for single-file operation) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
-    <!-- 6. Custom Tailwind Config and Styles -->
     <script>
         // Custom Tailwind Configuration to use the Logo's Primary Green (#008000)
         tailwind.config = {
@@ -41,13 +35,6 @@
                         },
                         'teal': {
                             600: '#008080', // Keep some teal accent for contrast
-                        },
-                        'red': {
-                            50: '#FEF2F2',
-                            100: '#FEE2E2',
-                            500: '#EF4444',
-                            600: '#DC2626',
-                            700: '#B91C1C',
                         }
                     }
                 }
@@ -158,8 +145,7 @@
             Hourglass: (p) => <Icon name="hourglass" {...p} />,
             Pencil: (p) => <Icon name="pencil" {...p} />,
             Loader2: (p) => <Icon name="loader-2" {...p} />,
-            Wallet: (p) => <Icon name="wallet" {...p} />,
-            Receipt: (p) => <Icon name="receipt" {...p} />
+            ClipboardList: (p) => <Icon name="clipboard-list" {...p} /> // NEW Icon for Notes
         };
 
         // --- SECURITY HELPER: Hashing Function ---
@@ -199,60 +185,47 @@
         );
 
 
-        // --- List Management Component (Admin Only) - REFACTORED FOR STABILITY ---
-        const ListManagement = ({ therapists = [], services = [], durations = [], onAdd, onDelete, onEdit }) => {
+        // --- List Management Component (Admin Only) ---
+        const ListManagement = ({ therapists, services, durations, onAdd, onDelete, onEdit }) => {
             const [activeTab, setActiveTab] = useState('therapist'); 
             
             // Add State
             const [newItemName, setNewItemName] = useState('');
             // Service Prices: Map { "60 Mins": 450, "90 Mins": 675 }
             const [newItemPrices, setNewItemPrices] = useState({}); 
-            // Therapist Commission
-            const [newItemCommission, setNewItemCommission] = useState('');
             
             // Edit State
             const [editingId, setEditingId] = useState(null);
             const [editName, setEditName] = useState('');
             const [editPrices, setEditPrices] = useState({});
-            const [editCommission, setEditCommission] = useState('');
 
             const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
             const closeModal = () => setModal({ ...modal, isOpen: false });
             
             const handleFormSubmit = (e) => {
                 e.preventDefault();
-                // Pass extra data based on type
-                let extraData = null;
-                if (activeTab === 'service') extraData = newItemPrices;
-                if (activeTab === 'therapist') extraData = newItemCommission;
-
-                onAdd(activeTab, newItemName, extraData);
+                // Pass extra data (price map) if it's a service
+                onAdd(activeTab, newItemName, activeTab === 'service' ? newItemPrices : null);
                 setNewItemName('');
                 setNewItemPrices({});
-                setNewItemCommission('');
             };
             
             const startEdit = (item) => {
                 setEditingId(item.id);
                 setEditName(item.name);
                 setEditPrices(item.prices || {});
-                setEditCommission(item.commission || '');
             };
 
             const cancelEdit = () => {
                 setEditingId(null);
                 setEditName('');
                 setEditPrices({});
-                setEditCommission('');
             };
 
             const saveEdit = () => {
                 const updatedData = { name: editName };
                 if (activeTab === 'service') {
                     updatedData.prices = editPrices;
-                }
-                if (activeTab === 'therapist') {
-                    updatedData.commission = editCommission;
                 }
                 onEdit(activeTab, editingId, updatedData);
                 setEditingId(null);
@@ -318,24 +291,15 @@
                                     onChange={e => setNewItemName(e.target.value)} 
                                     className="flex-1 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
                                 />
-                                {activeTab === 'therapist' && (
-                                    <input 
-                                        type="number"
-                                        placeholder="Comm %" 
-                                        value={newItemCommission} 
-                                        onChange={e => setNewItemCommission(e.target.value)} 
-                                        className="w-24 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
-                                    />
-                                )}
                             </div>
                             
                             {/* Dynamic Price Inputs for Services */}
                             {activeTab === 'service' && (
                                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                                     <p className="text-xs font-bold text-slate-500 mb-2 uppercase">Set Prices per Duration (Optional)</p>
-                                    {(!durations || durations.length === 0) && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first to set prices.</p>}
+                                    {durations.length === 0 && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first to set prices.</p>}
                                     <div className="grid grid-cols-2 gap-2">
-                                        {durations && durations.map(d => (
+                                        {durations.map(d => (
                                             <div key={d.id} className="flex items-center gap-2 bg-white p-2 border rounded">
                                                 <span className="text-xs font-bold text-slate-600 whitespace-nowrap w-16">{d.name}:</span>
                                                 <input 
@@ -358,39 +322,27 @@
                     {/* Current List */}
                     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
                         <div className="p-4 bg-logo-green-50 font-bold text-logo-green-800 text-sm border-b border-logo-green-100 flex justify-between items-center">
-                            <span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList ? currentList.length : 0})</span>
+                            <span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList.length})</span>
                             {icon}
                         </div>
                         
                         <div className="max-h-[400px] overflow-y-auto">
-                            {(!currentList || currentList.length === 0) ? (
+                            {currentList.length === 0 ? (
                                 <p className="text-center text-slate-400 p-6 italic">No items found.</p>
                             ) : (
                                 currentList.map(item => (
                                     <div key={item.id} className="p-4 border-b flex flex-col gap-2 last:border-b-0 hover:bg-slate-50">
                                         <div className="flex justify-between items-center w-full">
                                             {editingId === item.id ? (
-                                                <div className="flex gap-2 flex-1 mr-2">
-                                                    <input 
-                                                        value={editName}
-                                                        onChange={e => setEditName(e.target.value)}
-                                                        className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"
-                                                    />
-                                                    {activeTab === 'therapist' && (
-                                                        <input 
-                                                            type="number"
-                                                            placeholder="%"
-                                                            value={editCommission}
-                                                            onChange={e => setEditCommission(e.target.value)}
-                                                            className="w-16 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500"
-                                                        />
-                                                    )}
-                                                </div>
+                                                // Edit Mode Header
+                                                <input 
+                                                    value={editName}
+                                                    onChange={e => setEditName(e.target.value)}
+                                                    className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500 mr-2"
+                                                />
                                             ) : (
-                                                <span className="text-slate-700 font-medium">
-                                                    {item.name}
-                                                    {item.commission && activeTab === 'therapist' && <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">{item.commission}%</span>}
-                                                </span>
+                                                // View Mode Header
+                                                <span className="text-slate-700 font-medium">{item.name}</span>
                                             )}
                                             
                                             {/* Actions */}
@@ -418,7 +370,7 @@
                                             <div className="text-xs text-slate-500 w-full">
                                                 {editingId === item.id ? (
                                                     <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-100 p-2 rounded">
-                                                        {durations && durations.map(d => (
+                                                        {durations.map(d => (
                                                             <div key={d.id} className="flex items-center gap-2">
                                                                 <span className="font-bold w-14">{d.name}:</span>
                                                                 <input 
@@ -526,7 +478,6 @@
             const [user, setUser] = useState(null);
             const [users, setUsers] = useState([]);
             const [transactions, setTransactions] = useState([]);
-            const [expenses, setExpenses] = useState([]); // NEW: Expenses State
             const [history, setHistory] = useState([]);
             
             // NEW: Offline Queue State
@@ -560,10 +511,11 @@
                 service: '', 
                 therapist: '', 
                 amount: '', 
-                duration: '', // Added Duration
+                duration: '', 
                 type: 'booking', 
                 time: new Date().toTimeString().slice(0, 5),
-                targetBranch: ''
+                targetBranch: '',
+                notes: '' // ⬅️ NEW: Service Notes Field
             });
             const [modal, setModal] = useState({
                 isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red'
@@ -574,12 +526,6 @@
             const closeModal = () => setModal({ ...modal, isOpen: false });
             const closeEditUserModal = () => setEditUserModal({ isOpen: false, user: null, newPin: '' });
 
-            // --- Helper: Check if user is online (Defined inside App to use in render) ---
-            const isUserOnline = (lastActive) => {
-                if (!lastActive) return false;
-                const diff = Date.now() - getMillis(lastActive);
-                return diff < 2 * 60 * 1000; // 2 minutes threshold
-            };
 
             // --- 1. INITIALIZE FIREBASE ---
             useEffect(() => {
@@ -672,24 +618,27 @@
                         setIsGlobalLoading(true);
                         try {
                             for (const item of queueCopy) {
-                                const collectionName = item.collectionType || 'transactions'; // Default to transactions for backward compat
+                                // Replace placeholder ID if needed, but simple add() generates one.
+                                // IMPORTANT: Restore serverTimestamp behavior
                                 const itemPayload = {
                                     ...item,
                                     timestamp: firebase.firestore.FieldValue.serverTimestamp() 
                                 };
+                                // Remove local id used for keying
                                 delete itemPayload.localId;
-                                delete itemPayload.collectionType; // Clean up
 
-                                await fb.db.collection(`${basePath}/${collectionName}`).add(itemPayload);
+                                await fb.db.collection(`${basePath}/transactions`).add(itemPayload);
                                 syncedCount++;
                             }
                             
                             // Clear queue only after success
                             setOfflineQueue([]);
-                            setModal({ isOpen: true, type: 'alert', title: 'Sync Complete', message: `Successfully uploaded ${syncedCount} offline items.`, confirmColor: 'logo-green', onConfirm: closeModal });
+                            setModal({ isOpen: true, type: 'alert', title: 'Sync Complete', message: `Successfully uploaded ${syncedCount} offline bookings.`, confirmColor: 'logo-green', onConfirm: closeModal });
 
                         } catch (error) {
                             console.error("Sync failed", error);
+                            // Keep remaining items in queue if partial fail? 
+                            // For simplicity, we keep all if one fails to prevent data loss, or just retry next time.
                         } finally {
                             setIsGlobalLoading(false);
                         }
@@ -719,13 +668,8 @@
                         setDbReady(true);
                     }, (error) => console.error("Sync Error: Transactions", error));
 
-                // NEW: Sync Expenses
-                const unsubExpenses = getCollection('expenses')
-                    .onSnapshot((snapshot) => {
-                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
-                        setExpenses(data);
-                    }, (error) => console.error("Sync Error: Expenses", error));
+                // History (Removed from Global Sync for Scalability)
+                // History is now loaded lazily in a separate useEffect below.
 
                 // Users (Small - Always Load)
                 const unsubUsers = getCollection('users')
@@ -737,7 +681,21 @@
                             seedDefaultUsers(db, basePath);
                             return; 
                         }
-                        setUsers(data);
+
+                        // Check hash updates
+                        const needsUpdate = data.filter(u => u.username === 'admin' || u.username === 'morning' || u.username === 'night');
+                        let shouldWait = false;
+                        for (const u of needsUpdate) {
+                            if (u.pin === '8888' || u.pin === '1111' || u.pin === '2222') {
+                                const hashedPin = await hashPin(u.pin);
+                                await userColl.doc(u.id).update({ pin: hashedPin });
+                                shouldWait = true;
+                            }
+                        }
+                        
+                        if (!shouldWait) {
+                            setUsers(data);
+                        }
 
                     }, (error) => console.error("Sync Error: Users", error));
 
@@ -771,7 +729,7 @@
 
                 return () => { 
                     unsubTrans(); 
-                    unsubExpenses();
+                    // unsubHistory(); // Removed
                     unsubUsers(); 
                     unsubTherapists(); 
                     unsubServices();
@@ -839,6 +797,13 @@
                 return () => clearInterval(interval);
             }, [user, fb]);
 
+            // Helper: Check if a user is online (active in last 2 minutes)
+            const isUserOnline = (lastActive) => {
+                if (!lastActive) return false;
+                const diff = Date.now() - getMillis(lastActive);
+                return diff < 2 * 60 * 1000; // 2 minutes threshold
+            };
+
 
             // --- 3. HELPERS ---
             
@@ -869,13 +834,6 @@
                     setFormData(prev => ({ ...prev, targetBranch: user.currentBranch }));
                 }
             }, [user]);
-            
-            // Also update Expense form target branch
-             useEffect(() => {
-                if (user && expenseForm.targetBranch === '' && user.currentBranch !== 'ALL') {
-                    setExpenseForm(prev => ({ ...prev, targetBranch: user.currentBranch }));
-                }
-            }, [user]);
 
             const formatCurrency = (val) => {
                 if (val === undefined || val === null || val === '') return '';
@@ -891,38 +849,33 @@
             };
             
             // Filter Transactions by Branch AND My Shift Toggle
-            const getFilteredData = (dataCollection) => {
+            const getFilteredData = () => {
                 if (!user) return [];
-                let data = dataCollection;
+                let data = transactions;
 
                 // 1. Filter by Branch (if not ALL)
                 if (user.currentBranch !== 'ALL') {
                     data = data.filter(t => t.branch === user.currentBranch);
                 }
 
-                // 2. Filter by User (if My Shift is toggled AND user is staff AND it's the transactions list)
-                if (showMyShift && user.role !== 'admin' && dataCollection === transactions) {
+                // 2. Filter by User (if My Shift is toggled AND user is staff)
+                if (showMyShift && user.role !== 'admin') {
                     data = data.filter(t => t.recordedBy === user.name);
                 }
                 
                 return data;
             };
 
-            const filteredTransactions = getFilteredData(transactions);
-            const filteredExpenses = getFilteredData(expenses);
+            const filteredTransactions = getFilteredData();
 
             const stats = useMemo(() => {
-                const sales = filteredTransactions.filter(t => t.status === 'completed').reduce((acc, curr) => acc + Number(curr.amount), 0);
-                const pending = filteredTransactions.filter(t => t.status === 'pending').reduce((acc, curr) => acc + Number(curr.amount), 0);
-                const expenseTotal = filteredExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
-                
-                return { 
-                    totalRevenue: sales, 
-                    pendingValue: pending, 
-                    totalExpenses: expenseTotal, 
-                    netCash: sales - expenseTotal // Simple Net Cash formula
-                };
-            }, [filteredTransactions, filteredExpenses]);
+                const data = filteredTransactions;
+                const totalRevenue = data.filter(t => t.status === 'completed').reduce((acc, curr) => acc + Number(curr.amount), 0);
+                const pendingValue = data.filter(t => t.status === 'pending').reduce((acc, curr) => acc + Number(curr.amount), 0);
+                const totalBookings = data.filter(t => t.type === 'booking').length;
+                const completedSales = data.filter(t => t.status === 'completed').length;
+                return { totalRevenue, pendingValue, totalBookings, completedSales };
+            }, [filteredTransactions]);
 
             // Therapist Stats by Branch
             const therapistStats = useMemo(() => {
@@ -970,41 +923,25 @@
 
 
             const downloadCSV = (record) => {
-                const headers = ['Date', 'Branch', 'Time', 'Type', 'Client/Desc', 'Service/Item', 'Therapist', 'Amount', 'Status', 'Recorded By'];
-                
-                // Transactions Rows
-                const txRows = record.transactions.map(t => [
+                const headers = ['Date', 'Branch', 'Time', 'Client Name', 'Service', 'Duration', 'Therapist', 'Amount', 'Status', 'Recorded By', 'Notes']; // ⬅️ UPDATED: Added Notes
+                const rows = record.transactions.map(t => [
                     `"${record.date}"`, 
                     `"${t.branch || 'N/A'}"`, 
                     `"${t.time}"`, 
-                    '"Sale"',
                     `"${t.clientName}"`, 
-                    `"${t.service}"`, 
+                    `"${t.service}"`,
+                    `"${t.duration || ''}"`, 
                     `"${t.therapist}"`, 
                     t.amount, 
                     t.status, 
-                    `"${t.recordedBy || ''}"`
+                    `"${t.recordedBy || 'System'}"`,
+                    `"${t.notes || ''}"` // ⬅️ UPDATED: Added Notes to CSV
                 ]);
-
-                // Expenses Rows
-                const exRows = (record.expenses || []).map(e => [
-                    `"${record.date}"`, 
-                    `"${e.branch || 'N/A'}"`, 
-                    `"${new Date(getMillis(e.timestamp)).toLocaleTimeString()}"`, 
-                    '"Expense"',
-                    `"${e.description}"`, 
-                    '"-"', 
-                    '"-"', 
-                    -Math.abs(e.amount), // Negative amount for expenses
-                    '"Paid"', 
-                    `"${e.recordedBy || ''}"`
-                ]);
-                
-                const csvContent = [headers.join(','), ...txRows.map(r => r.join(',')), ...exRows.map(r => r.join(','))].join('\n');
+                const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = `Report_${record.date.replace(/,/g, '').replace(/ /g, '_')}.csv`;
+                link.download = `AtHome_Report_${record.date.replace(/,/g, '').replace(/ /g, '_')}.csv`;
                 link.click();
             };
 
@@ -1012,28 +949,41 @@
             // --- 4. ACTIONS ---
 
             // List Management Handlers
-            const handleAddItem = async (listType, itemName, extraData) => {
+            const handleAddItem = async (listType, itemName, itemPrices = null) => {
                 if (!itemName) return;
 
                 const basePath = `artifacts/${fb.appId}/public/data`;
                 let collectionName = '';
                 let data = { name: itemName.trim() };
-                
+                let checkList = [];
+
                 if (listType === 'therapist') {
                     collectionName = 'therapists';
-                    // Add commission if provided
-                    if (extraData) data.commission = extraData;
+                    checkList = therapistsList;
                 } else if (listType === 'service') {
                     collectionName = 'services';
-                    // Add prices map if provided
-                    if (extraData) data.prices = extraData;
+                    checkList = servicesList;
+                    if (itemPrices) data.prices = itemPrices; // Store price map
                 } else if (listType === 'duration') {
                     collectionName = 'durations';
+                    checkList = durationsList;
                 } else {
                     return;
                 }
                 
-                await fb.db.collection(`${basePath}/${collectionName}`).add(data);
+                if (checkList.some(item => item.name.toLowerCase() === itemName.trim().toLowerCase())) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Duplicate Item', message: `${itemName} already exists in ${listType}s.`, onConfirm: closeModal, confirmColor: 'red' });
+                    return;
+                }
+
+                setIsGlobalLoading(true);
+                try {
+                    await fb.db.collection(`${basePath}/${collectionName}`).add(data);
+                } catch (err) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to add item.', confirmColor: 'red', onConfirm: closeModal });
+                } finally {
+                    setIsGlobalLoading(false);
+                }
             };
 
             const handleDeleteItem = (listType, id, name) => {
@@ -1046,10 +996,17 @@
                 const basePath = `artifacts/${fb.appId}/public/data`;
                 
                 setModal({
-                    isOpen: true, type: 'confirm', title: `Delete ${listType}?`, message: `Are you sure?`, confirmColor: 'red',
+                    isOpen: true, type: 'confirm', title: `Delete ${listType}?`, message: `Are you sure you want to permanently delete "${name}"?`, confirmColor: 'red',
                     onConfirm: async () => {
-                        await fb.db.collection(`artifacts/${fb.appId}/public/data/${collectionName}`).doc(id).delete();
-                        closeModal();
+                        closeModal(); // Close confirm modal first
+                        setIsGlobalLoading(true);
+                        try {
+                            await fb.db.collection(`${basePath}/${collectionName}`).doc(id).delete();
+                        } catch (error) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Deletion failed.', confirmColor: 'red', onConfirm: closeModal });
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
                     }
                 });
             };
@@ -1199,12 +1156,12 @@
 
                 // VALIDATION: Check for conflicts (Same Therapist at Exact Same Time)
                 // We need to check BOTH transactions (synced) AND offlineQueue (unsynced)
-                const allBookings = [...transactions, ...offlineQueue.filter(x => x.collectionType !== 'expenses')];
+                const allBookings = [...transactions, ...offlineQueue];
                 
                 const isConflict = allBookings.some(t => 
                     t.therapist === formData.therapist && 
                     t.time === formData.time &&
-                    // Assuming therapists are branch-agnostic for validation (they can't be in two places at once)
+                    // Assuming therapists are global-locked per schedule time
                     true
                 );
 
@@ -1213,17 +1170,23 @@
                     return;
                 }
 
+                // Payload
+                const transactionPayload = {
+                    ...formData,
+                    amount: parseFloat(formData.amount),
+                    status: formData.type === 'sale' ? 'completed' : 'pending',
+                    recordedBy: user.name,
+                    branch: transactionBranch,
+                    notes: formData.notes.trim() // ⬅️ NEW: Include Notes in payload
+                };
+
+
                 // OFFLINE HANDLING
                 if (!isOnline) {
                     const newOfflineItem = {
-                        ...formData,
-                        amount: parseFloat(formData.amount),
-                        status: formData.type === 'sale' ? 'completed' : 'pending',
-                        recordedBy: user.name,
-                        branch: transactionBranch,
+                        ...transactionPayload,
                         localId: Date.now(), // Temp ID
-                        timestamp: Date.now(), // Local timestamp
-                        collectionType: 'transactions'
+                        timestamp: Date.now() // Local timestamp
                     };
                     setOfflineQueue(prev => [...prev, newOfflineItem]);
                     
@@ -1231,7 +1194,8 @@
                     const resetTargetBranch = user.currentBranch === 'ALL' ? transactionBranch : user.currentBranch;
                     setFormData({ 
                         clientName: '', service: '', duration: '', therapist: '', amount: '', 
-                        type: 'booking', time: new Date().toTimeString().slice(0, 5), targetBranch: resetTargetBranch
+                        type: 'booking', time: new Date().toTimeString().slice(0, 5), 
+                        targetBranch: resetTargetBranch, notes: '' // ⬅️ NEW: Reset Notes
                     });
 
                     setModal({ isOpen: true, type: 'alert', title: 'Saved Offline', message: 'Booking queued. Will sync when online.', onConfirm: closeModal, confirmColor: 'orange' });
@@ -1243,11 +1207,7 @@
                 try {
                     const basePath = `artifacts/${fb.appId}/public/data`;
                     await fb.db.collection(`${basePath}/transactions`).add({
-                        ...formData,
-                        amount: parseFloat(formData.amount),
-                        status: formData.type === 'sale' ? 'completed' : 'pending',
-                        recordedBy: user.name,
-                        branch: transactionBranch, 
+                        ...transactionPayload,
                         // SECURE: Use Server Timestamp instead of Client Date
                         timestamp: firebase.firestore.FieldValue.serverTimestamp()
                     });
@@ -1262,7 +1222,8 @@
                         amount: '', 
                         type: 'booking', 
                         time: new Date().toTimeString().slice(0, 5),
-                        targetBranch: resetTargetBranch
+                        targetBranch: resetTargetBranch,
+                        notes: '' // ⬅️ NEW: Reset Notes
                     });
                     
                     setModal({ isOpen: true, type: 'alert', title: 'Booking Saved!', message: `${formData.clientName} recorded for ${transactionBranch}.`, onConfirm: closeModal, confirmColor: 'logo-green' });
@@ -1287,27 +1248,6 @@
                 } finally {
                     setIsGlobalLoading(false);
                 }
-            };
-
-            const handleDeleteExpense = (id) => {
-                if (user?.role !== 'admin') {
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can delete.', onConfirm: closeModal, confirmColor: 'red' });
-                    return;
-                }
-                setModal({
-                    isOpen: true, type: 'confirm', title: 'Delete Expense?', message: 'Remove this record?', confirmColor: 'red',
-                    onConfirm: async () => {
-                        closeModal();
-                        setIsGlobalLoading(true);
-                        try {
-                            await fb.db.collection(`artifacts/${fb.appId}/public/data/expenses`).doc(id).delete();
-                        } catch(err) {
-                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Delete failed.', confirmColor: 'red', onConfirm: closeModal });
-                        } finally {
-                            setIsGlobalLoading(false);
-                        }
-                    }
-                });
             };
 
             const requestDelete = (id) => {
@@ -1337,13 +1277,13 @@
                     setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can close the day.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
-                if (filteredTransactions.length === 0 && filteredExpenses.length === 0) {
+                if (filteredTransactions.length === 0) {
                     setModal({ isOpen: true, type: 'alert', title: 'No Data', message: 'Nothing to save for this branch.', onConfirm: closeModal, confirmColor: 'logo-green' });
                     return;
                 }
 
                 setModal({
-                    isOpen: true, type: 'confirm', title: 'Archive & Start New Day?', message: `This will MOVE all active bookings AND expenses to the History tab and clear the dashboard for tomorrow.`, confirmColor: 'logo-green',
+                    isOpen: true, type: 'confirm', title: 'Archive & Start New Day?', message: `This will MOVE all active bookings to the History tab and clear the dashboard for tomorrow. You can view and download this report in the History tab anytime.`, confirmColor: 'logo-green',
                     onConfirm: async () => {
                         closeModal();
                         setIsGlobalLoading(true);
@@ -1351,27 +1291,20 @@
                             const basePath = `artifacts/${fb.appId}/public/data`;
                             const historyColl = fb.db.collection(`${basePath}/history`);
                             const transColl = fb.db.collection(`${basePath}/transactions`);
-                            const expColl = fb.db.collection(`${basePath}/expenses`);
 
-                            // Add to History
                             await historyColl.add({
                                 date: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
                                 timestamp: new Date().toLocaleString(),
                                 // SECURE: Use Server Timestamp
                                 timestamp_val: firebase.firestore.FieldValue.serverTimestamp(),
                                 transactions: filteredTransactions,
-                                expenses: filteredExpenses, // SAVE EXPENSES TOO
                                 stats: stats,
                                 branch: user.currentBranch,
                                 closedBy: user.name
                             });
 
-                            // Delete transactions
-                            const deleteTxPromises = filteredTransactions.map(t => transColl.doc(t.id).delete());
-                            // Delete expenses
-                            const deleteExPromises = filteredExpenses.map(e => expColl.doc(e.id).delete());
-
-                            await Promise.all([...deleteTxPromises, ...deleteExPromises]);
+                            const deletePromises = filteredTransactions.map(t => transColl.doc(t.id).delete());
+                            await Promise.all(deletePromises);
 
                             setView('history');
                         } catch (err) {
@@ -1633,7 +1566,6 @@
                         <div className="flex p-1 bg-slate-200/60 rounded-xl mb-6 sticky top-[70px] z-10 backdrop-blur-sm overflow-x-auto">
                             <button onClick={()=>setView('dashboard')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='dashboard'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.LayoutDashboard size={16}/> Daily</button>
                             <button onClick={()=>setView('add')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='add'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Plus size={16}/> Booking</button>
-                            <button onClick={()=>setView('expenses')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expenses'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Wallet size={16}/> Cost</button>
                             <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
                             {user.role === 'admin' && (
                                 <>
@@ -1654,51 +1586,107 @@
 
                         {view === 'dashboard' && (
                             <div className="space-y-6 fade-in">
-                                <div className="grid grid-cols-3 gap-2">
-                                    <div className="bg-white p-3 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-400 text-[10px] font-bold uppercase">Sales</p><h3 className="text-lg font-bold text-logo-green-700">{formatCurrency(stats.totalRevenue)}</h3></div>
-                                    <div className="bg-white p-3 rounded-xl shadow-sm border border-red-100"><p className="text-slate-400 text-[10px] font-bold uppercase">Expenses</p><h3 className="text-lg font-bold text-red-600">{formatCurrency(stats.totalExpenses)}</h3></div>
-                                    <div className={`p-3 rounded-xl shadow-sm border ${stats.netCash >= 0 ? 'bg-teal-50 border-teal-200' : 'bg-red-50 border-red-200'}`}><p className="text-slate-400 text-[10px] font-bold uppercase">Net Cash</p><h3 className={`text-lg font-bold ${stats.netCash >= 0 ? 'text-teal-700' : 'text-red-700'}`}>{formatCurrency(stats.netCash)}</h3></div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Sales ({user.currentBranch})</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.totalRevenue)}</h3></div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Unpaid</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.pendingValue)}</h3></div>
                                 </div>
-                                
+
                                 <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100">
-                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={14}/> Handles Today</h3>
-                                    {Object.keys(therapistStats).length === 0 ? <p className="text-xs text-slate-400 italic text-center">No data.</p> : Object.keys(therapistStats).sort().map(b=>(<div key={b} className="mb-4 last:mb-0"><h4 className="text-[10px] font-bold text-logo-green-700 uppercase mb-1">{b}</h4>{therapistStats[b].map(s=>(<div key={s.name} className="flex justify-between text-sm py-1 border-b border-slate-50 last:border-0"><span>{s.name}</span><span className="font-bold text-slate-700">{s.count} <span className="text-[10px] font-normal text-slate-400">({formatCurrency(s.amount)})</span></span></div>))}</div>))}
+                                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={16} className="text-logo-green-700"/> Therapist Handles (Today)</h3>
+                                    
+                                    {Object.keys(therapistStats).length === 0 ? (
+                                        <p className="text-sm text-slate-400 italic text-center py-2">No activity yet.</p>
+                                    ) : (
+                                        Object.keys(therapistStats).sort((a, b) => {
+                                             const idxA = BRANCHES.indexOf(a);
+                                             const idxB = BRANCHES.indexOf(b);
+                                             if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+                                             if (idxA === -1) return 1;
+                                             if (idxB === -1) return -1;
+                                             return idxA - idxB;
+                                         }).map(branch => (
+                                            <div key={branch} className="mb-4 last:mb-0">
+                                                {(user.currentBranch === 'ALL' || Object.keys(therapistStats).length > 1) && (
+                                                    <h4 className="text-[10px] font-bold text-logo-green-700 uppercase mb-2 bg-logo-green-50 px-2 py-1 rounded inline-block">
+                                                        {branch}
+                                                    </h4>
+                                                )}
+                                                <div className="space-y-2">
+                                                    {therapistStats[branch].map((s) => (
+                                                        <div key={s.name} className="flex justify-between items-center pb-2 border-b border-slate-50 last:border-0 last:pb-0 ml-1">
+                                                            <div className="flex gap-2 items-center">
+                                                                <span className="w-6 h-6 bg-logo-green-100 text-logo-green-700 rounded-full flex items-center justify-center text-[10px] font-bold">{s.name.charAt(0)}</span>
+                                                                <span className="text-sm font-semibold text-slate-700">{s.name}</span>
+                                                            </div>
+                                                            <div className="text-right flex flex-col">
+                                                                <span className="text-sm font-bold text-logo-green-700">{s.count} <span className="text-[9px] font-normal text-slate-400 uppercase">Handles</span></span>
+                                                                {user.role === 'admin' && <span className="text-[9px] text-slate-400">{formatCurrency(s.amount)}</span>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
 
                                 <div>
                                     <div className="flex justify-between items-center mb-4">
-                                        <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.LayoutDashboard size={18}/> Today's Bookings</h2>
-                                        <div className="flex gap-2">{user.role!=='admin' && <button onClick={()=>setShowMyShift(!showMyShift)} className={`text-[10px] font-bold px-3 py-1.5 rounded-full border transition-colors ${showMyShift?'bg-logo-green-600 text-white':'bg-white text-slate-500'}`}>My Shift</button>}
-                                        {user.role==='admin' && <button onClick={requestEndDay} className="text-[10px] font-bold text-white bg-logo-green-700 px-3 py-1.5 rounded-full shadow-sm hover:bg-logo-green-800">End Day</button>}</div>
-                                    </div>
-                                    {filteredTransactions.length===0 ? <div className="text-center py-8 border border-dashed rounded-xl text-slate-400 text-sm">No bookings yet.</div> : 
-                                    <div className="space-y-3">{filteredTransactions.map(t=>(<div key={t.id} className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400'}`}><div className="flex-1"><div className="flex gap-2 mb-1"><span className="text-[9px] font-bold bg-slate-100 px-1.5 rounded text-slate-500">{t.branch}</span><span className="text-[10px] font-mono text-slate-400">{formatDate(t.timestamp)} {t.time}</span></div><h4 className="font-bold text-sm">{t.clientName}</h4><p className="text-xs text-slate-500">{t.service} {t.duration && `• ${t.duration}`} • {t.therapist}</p></div><div className="text-right"><div className="font-bold text-sm">{formatCurrency(t.amount)}</div><div className="flex justify-end gap-1 mt-1"><button onClick={()=>toggleStatus(t)} className={`p-1 rounded ${t.status==='completed'?'bg-green-100 text-green-700':'bg-orange-100 text-orange-600'}`}>{t.status==='completed'?<Icons.CheckCircle2 size={14}/>:<Icons.DollarSign size={14}/>}</button>{user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14}/></button>}</div></div></div>))}</div>}
-                                </div>
-                            </div>
-                        )}
-                        
-                        {view === 'expenses' && (
-                            <div className="space-y-6 fade-in">
-                                <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
-                                    <h3 className="font-bold text-red-600 mb-4 flex gap-2"><Icons.Receipt size={18}/> Log Expense</h3>
-                                    <form onSubmit={handleExpenseSubmit} className="flex flex-col gap-3">
-                                        {user.currentBranch === 'ALL' && (
-                                            <div className="relative"><Icons.MapPin size={16} className="absolute left-3 top-3.5 text-slate-400"/><select required value={expenseForm.targetBranch} onChange={e=>setExpenseForm({...expenseForm, targetBranch:e.target.value})} className="w-full pl-9 p-3 border rounded-lg bg-slate-50 outline-none text-sm"><option value="" disabled>Branch</option>{BRANCHES.map(b=><option key={b} value={b}>{b}</option>)}</select></div>
-                                        )}
-                                        <input required placeholder="Description (e.g. Meals, Transpo)" value={expenseForm.description} onChange={e=>setExpenseForm({...expenseForm, description:e.target.value})} className="w-full p-3 border rounded-lg bg-slate-50 outline-none text-sm"/>
-                                        <input required type="number" placeholder="Amount" value={expenseForm.amount} onChange={e=>setExpenseForm({...expenseForm, amount:e.target.value})} className="w-full p-3 border rounded-lg bg-slate-50 outline-none text-sm"/>
-                                        <button className="w-full bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700">Record Expense</button>
-                                    </form>
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-slate-700 mb-3">Today's Expenses</h3>
-                                    {filteredExpenses.length===0 ? <p className="text-center text-slate-400 text-sm py-4">No expenses recorded today.</p> : 
-                                    <div className="space-y-2">{filteredExpenses.map(e=>(
-                                        <div key={e.id} className="bg-white p-3 rounded-lg border-l-4 border-l-red-400 shadow-sm flex justify-between items-center">
-                                            <div><p className="font-bold text-sm">{e.description}</p><p className="text-[10px] text-slate-400">{e.branch} • {e.recordedBy}</p></div>
-                                            <div className="text-right"><span className="font-bold text-red-600">-{formatCurrency(e.amount)}</span>{user.role==='admin'&&<button onClick={()=>handleDeleteExpense(e.id)} className="block ml-auto mt-1 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14}/></button>}</div>
+                                        <h2 className="text-lg font-bold text-logo-green-900 flex gap-2">
+                                            <Icons.LayoutDashboard size={18}/> Live Schedule ({showMyShift ? 'My Shift' : user.currentBranch})
+                                        </h2>
+                                        <div className="flex items-center gap-2">
+                                            {user.role !== 'admin' && (
+                                                <button 
+                                                    onClick={() => setShowMyShift(!showMyShift)}
+                                                    className={`text-[10px] font-bold ${showMyShift ? 'bg-logo-green-700 text-white' : 'bg-logo-green-50 text-logo-green-700'} px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1 items-center transition-colors`}
+                                                >
+                                                    <Icons.User size={12}/> {showMyShift ? 'Showing My Shift' : 'Show Only Mine'}
+                                                </button>
+                                            )}
+                                            {user.role === 'admin' && (
+                                                <button onClick={requestEndDay} className="text-[10px] font-bold text-logo-green-700 bg-logo-green-50 px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1"><Icons.Archive size={12}/> End Day</button>
+                                            )}
                                         </div>
-                                    ))}</div>}
+                                    </div>
+                                    
+                                    {/* Performance Alert */}
+                                    {filteredTransactions.length > 50 && (
+                                        <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 text-sm flex justify-between items-center rounded-r shadow-sm">
+                                            <span><span className="font-bold">Performance Alert:</span> You have {filteredTransactions.length} active bookings. End the day to archive and speed up the app.</span>
+                                            {user.role === 'admin' && <button onClick={requestEndDay} className="underline font-bold hover:text-orange-900 ml-2 whitespace-nowrap">End Day Now</button>}
+                                        </div>
+                                    )}
+
+                                    {filteredTransactions.length===0?<div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No bookings found for the current filter.</div>:
+                                    <div className="space-y-3">
+                                        {filteredTransactions.map(t=>(
+                                            <div key={t.id} className={`bg-white p-4 rounded-xl border-l-[6px] flex justify-between items-start ${t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400'} shadow-sm`}>
+                                                <div className="flex-1 pr-4">
+                                                    {/* Displaying timestamp date for consistency */}
+                                                    <div className="flex gap-2 mb-1 items-center">
+                                                        <span className="text-[10px] font-bold bg-slate-100 px-2 rounded text-slate-500">{t.branch}</span>
+                                                        <span className="text-xs font-mono text-slate-400">{formatDate(t.timestamp)} - {t.time}</span>
+                                                    </div>
+                                                    <h3 className="font-bold text-slate-800">{t.clientName}</h3>
+                                                    <div className="text-xs text-slate-500 mt-1 flex gap-2 flex-wrap">
+                                                        <span>{t.service}</span>
+                                                        {t.duration && <span> • {t.duration}</span>}
+                                                        <span> • {t.therapist}</span>
+                                                    </div>
+                                                    {/* ⬅️ NEW: Display Notes */}
+                                                    {t.notes && t.notes.trim() && (
+                                                        <div className="mt-2 text-xs bg-slate-50 p-2 rounded border border-slate-200 text-slate-700 flex items-start gap-1">
+                                                            <Icons.ClipboardList size={14} className="min-w-[14px] text-logo-green-700 mt-[2px]"/>
+                                                            <span className="font-medium">Notes: </span>
+                                                            <span className="italic">{t.notes}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="text-right min-w-[80px]"><div className="font-bold text-lg">{formatCurrency(t.amount)}</div><div className="flex justify-end gap-2 mt-1"><button onClick={()=>toggleStatus(t)} className={`p-1.5 rounded-full ${t.status==='completed'?'bg-logo-green-100 text-logo-green-700':'bg-orange-100 text-orange-600'}`}>{t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}</button>{user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>}</div></div>
+                                            </div>
+                                        ))}
+                                    </div>}
                                 </div>
                             </div>
                         )}
@@ -1706,46 +1694,250 @@
                         {view === 'add' && (
                             <div className="bg-white rounded-2xl shadow-sm border border-logo-green-100 p-6 fade-in">
                                 <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Icons.Plus size={24} className="text-logo-green-700"/> New Booking</h2>
-                                <form onSubmit={handleSubmit} className="space-y-4">
+                                <form onSubmit={handleSubmit} className="space-y-5">
+                                    
+                                    {/* Conditional Branch Selector for Owner Admin */}
                                     {user.currentBranch === 'ALL' ? (
-                                        <div className="relative"><Icons.MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" /><select required value={formData.targetBranch} onChange={(e)=>setFormData({...formData, targetBranch:e.target.value})} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none"><option value="" disabled>SELECT TARGET BRANCH*</option>{BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}</select><Icons.ChevronDown size={16} className="absolute right-3 top-4 text-slate-400 pointer-events-none"/></div>
-                                    ) : <div className="p-3 bg-logo-green-50 rounded-lg text-sm text-logo-green-800 font-medium flex items-center gap-2"><Icons.MapPin size={16}/> Adding to: {user.currentBranch}</div>}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <label className={`border-2 rounded-xl p-3 flex flex-col items-center gap-1 cursor-pointer ${formData.type==='booking'?'border-logo-green-600 bg-logo-green-50':'border-slate-100'}`}><input type="radio" name="type" value="booking" checked={formData.type==='booking'} onChange={(e)=>setFormData({...formData, type:e.target.value})} className="hidden"/><Icons.Calendar size={18}/><span className="text-xs font-bold">Booking</span></label>
-                                        <label className={`border-2 rounded-xl p-3 flex flex-col items-center gap-1 cursor-pointer ${formData.type==='sale'?'border-teal-600 bg-teal-50':'border-slate-100'}`}><input type="radio" name="type" value="sale" checked={formData.type==='sale'} onChange={(e)=>setFormData({...formData, type:e.target.value})} className="hidden"/><Icons.DollarSign size={18}/><span className="text-xs font-bold">Direct Sale</span></label>
+                                        <div className="relative">
+                                            <Icons.MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" />
+                                            <select 
+                                                required 
+                                                value={formData.targetBranch} 
+                                                onChange={(e)=>setFormData({...formData, targetBranch:e.target.value})} 
+                                                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-logo-green-700 bg-slate-50 focus:bg-white appearance-none text-slate-600 font-bold border-logo-green-400"
+                                            >
+                                                <option value="" disabled>SELECT TARGET BRANCH*</option>
+                                                {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                                            </select>
+                                            <Icons.ChevronDown size={16} className="absolute right-3 top-4 text-slate-400 pointer-events-none"/>
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 bg-logo-green-50 rounded-lg text-sm text-logo-green-800 font-medium flex items-center gap-2"><Icons.MapPin size={16}/> Adding to: {user.currentBranch}</div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <label className={`border-2 rounded-xl p-3 flex flex-col items-center gap-2 ${formData.type==='booking'?'border-logo-green-700 bg-logo-green-50/50':'border-slate-100'}`}><input type="radio" name="type" value="booking" checked={formData.type==='booking'} onChange={(e)=>setFormData({...formData, type:e.target.value})} className="hidden"/><Icons.Calendar/><span className="text-sm font-bold">Appointment</span></label>
+                                        <label className={`border-2 rounded-xl p-3 flex flex-col items-center gap-2 ${formData.type==='sale'?'border-teal-600 bg-teal-50/50':'border-slate-100'}`}><input type="radio" name="type" value="sale" checked={formData.type==='sale'} onChange={(e)=>setFormData({...formData, type:e.target.value})} className="hidden"/><Icons.DollarSign/><span className="text-sm font-bold">Direct Pay</span></label>
                                     </div>
-                                    <input required placeholder="Client Name*" value={formData.clientName} onChange={e=>setFormData({...formData, clientName:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 outline-none"/>
-                                    <div className="space-y-3">
-                                        <select required value={formData.service} onChange={e=>handleServiceChange(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 outline-none appearance-none"><option value="" disabled>Select Service*</option>{servicesList.map(s => <option key={s.id} value={s.name}>{s.name} {s.price ? `(${formatCurrency(s.price)})` : ''}</option>)}</select>
-                                        <select value={formData.duration} onChange={e=>handleDurationChange(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 outline-none appearance-none"><option value="" disabled>Select Duration</option>{durationsList.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select>
-                                        <select required value={formData.therapist} onChange={e=>setFormData({...formData, therapist:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 outline-none appearance-none"><option value="" disabled>Select Therapist*</option>{therapistsList.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select>
+                                    <input required placeholder="Client Name*" value={formData.clientName} onChange={e=>setFormData({...formData, clientName:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
+                                    
+                                    <div className="space-y-4">
+                                        {/* Service Dropdown */}
+                                        <select required value={formData.service} onChange={e=>handleServiceChange(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
+                                            <option value="" disabled>Select Service*</option>
+                                            {servicesList.map(s => <option key={s.id} value={s.name}>{s.name} {s.price ? `(${formatCurrency(s.price)})` : ''}</option>)}
+                                        </select>
+                                        
+                                        {/* Duration Dropdown */}
+                                        <select value={formData.duration} onChange={e=>handleDurationChange(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
+                                            <option value="" disabled>Select Duration</option>
+                                            {durationsList.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                                        </select>
+
+                                        {/* Therapist Dropdown */}
+                                        <select required value={formData.therapist} onChange={e=>setFormData({...formData, therapist:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
+                                            <option value="" disabled>Select Therapist*</option>
+                                            {therapistsList.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                        </select>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3"><input required type="number" step="0.01" placeholder="Price (P)*" value={formData.amount} onChange={e=>setFormData({...formData, amount:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 outline-none"/><input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 outline-none"/></div>
-                                    <button className="w-full bg-logo-green-700 text-white font-bold py-4 rounded-xl shadow-lg mt-2 hover:bg-logo-green-800">Save Booking</button>
+                                    
+                                    {/* ⬅️ NEW: Notes Textarea */}
+                                    <textarea 
+                                        placeholder="Service Notes (e.g., Hard pressure, No oil on back, Client prefers quiet)" 
+                                        rows="3"
+                                        value={formData.notes} 
+                                        onChange={e=>setFormData({...formData, notes:e.target.value})} 
+                                        className="w-full p-3 border rounded-xl bg-slate-50 resize-none"
+                                    />
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {/* Price is now editable and required, auto-filled by service selection */}
+                                        <input required 
+                                            type="number" step="0.01" 
+                                            placeholder="Price (P)*" 
+                                            value={formData.amount} 
+                                            onChange={e=>setFormData({...formData, amount:e.target.value})} 
+                                            className="w-full p-3 border rounded-xl bg-slate-50"
+                                        />
+                                        <input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
+                                    </div>
+                                    <button className="w-full bg-logo-green-700 text-white font-bold py-4 rounded-xl shadow-lg mt-2">Save Booking</button>
                                 </form>
                             </div>
                         )}
 
-                        {view === 'profile' && <div className="bg-white rounded-xl shadow-sm border border-logo-green-100 p-6 fade-in"><h3 className="font-bold text-slate-800 mb-4 flex gap-2"><Icons.UserCog className="text-logo-green-700"/> Profile</h3><div className="bg-slate-50 p-4 rounded-xl border mb-6"><p className="text-xs text-slate-400 uppercase font-bold">Account</p><p className="font-bold text-logo-green-800 text-lg">{user.name}</p></div><form onSubmit={handleUpdateProfile} className="space-y-4"><input required value={profileData.username} onChange={e=>setProfileData({...profileData, username:e.target.value})} className="w-full p-3 border rounded-lg outline-none" placeholder="New Username"/><input type="password" inputMode="numeric" maxLength="4" value={profileData.pin} onChange={e=>setProfileData({...profileData, pin:e.target.value})} className="w-full p-3 border rounded-lg font-mono outline-none" placeholder="New PIN (Leave blank to keep old)"/><button className="w-full bg-logo-green-700 text-white font-bold py-3 rounded-lg">Update Credentials</button></form></div>}
+                        {view === 'profile' && (
+                            <div className="bg-white rounded-xl shadow-sm border border-logo-green-100 p-6 fade-in">
+                                <h3 className="font-bold text-slate-800 mb-4 flex gap-2"><Icons.UserCog className="text-logo-green-700"/> Profile</h3>
+                                <div className="bg-slate-50 p-4 rounded-xl border mb-6"><p className="text-xs text-slate-400 uppercase font-bold">Account</p><p className="font-bold text-logo-green-800 text-lg">{user.name}</p></div>
+                                <form onSubmit={handleUpdateProfile} className="space-y-4">
+                                    <input required value={profileData.username} onChange={e=>setProfileData({...profileData, username:e.target.value})} className="w-full p-3 border rounded-lg" placeholder="New Username"/>
+                                    <input type="password" inputMode="numeric" maxLength="4" value={profileData.pin} onChange={e=>setProfileData({...profileData, pin:e.target.value})} className="w-full p-3 border rounded-lg font-mono" placeholder="New PIN (Leave blank to keep old)"/>
+                                    <button className="w-full bg-logo-green-700 text-white font-bold py-3 rounded-lg">Update Credentials</button>
+                                </form>
+                            </div>
+                        )}
                         
-                        {/* Admin Views */}
-                        {view === 'lists' && user.role === 'admin' && <ListManagement therapists={therapistsList} services={servicesList} durations={durationsList} onAdd={handleAddItem} onDelete={handleDeleteItem} onEdit={handleEditItem} />}
-                        {view === 'team' && user.role === 'admin' && <div className="space-y-6 fade-in"><h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.Users/> Manage Staff</h2><div className="bg-white rounded-xl shadow-sm border overflow-hidden">{users.filter(u => { if (user.username === 'admin') return true; if (u.id === user.id) return true; if (u.username === 'admin') return false; return u.currentBranch === user.currentBranch; }).sort((a, b) => { const aOnline = isUserOnline(a.lastActive); const bOnline = isUserOnline(b.lastActive); if (aOnline && !bOnline) return -1; if (!aOnline && bOnline) return 1; return a.name.localeCompare(b.name); }).map(u=>(<div key={u.id} className="p-4 border-b flex justify-between items-center hover:bg-slate-50 transition"><div><h3 className="font-bold flex items-center">{u.name} {u.username === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-logo-green-100 text-logo-green-700 ml-2">OWNER</span>}{u.username !== 'admin' && u.role === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">ADMIN</span>}{u.role === 'staff' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ml-2">STAFF</span>}{isUserOnline(u.lastActive) && <span className="ml-2 flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200 animate-pulse"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Online</span>}</h3><p className="text-xs text-slate-400">@{u.username} • {u.currentBranch || 'Unknown'}</p></div><div className="flex gap-2 items-center">{user.username === 'admin' && u.username !== 'admin' && (<button onClick={(e)=>{e.stopPropagation(); handleToggleRole(u);}} className={`p-1 rounded transition ${u.role === 'admin' ? 'text-orange-400 hover:text-orange-600 hover:bg-orange-50' : 'text-blue-400 hover:text-blue-600 hover:bg-blue-50'}`} title={u.role === 'admin' ? "Demote to Staff" : "Promote to Admin"}>{u.role === 'admin' ? <Icons.User size={16}/> : <Icons.ShieldCheck size={16}/>}</button>)}{user.username === 'admin' && (<button onClick={(e)=>{e.stopPropagation(); setEditUserModal({ isOpen: true, user: u, newPin: '' });}} className="text-slate-300 hover:text-logo-green-700 p-1" title="Reset PIN"><Icons.Lock size={16}/></button>)}{user.role === 'admin' && (<button onClick={(e)=>{e.stopPropagation(); handleDeleteUser(u.id)}} className="text-slate-300 hover:text-red-500 p-1" title="Delete User"><Icons.Trash2 size={16}/></button>)}</div></div>))}</div><div className="bg-white rounded-xl shadow-sm border p-6"><h3 className="font-bold mb-4">Add Staff</h3><form onSubmit={handleAddUser} className="space-y-4"><input required placeholder="Name" value={newUser.name} onChange={e=>setNewUser({...newUser, name:e.target.value})} className="w-full p-2 border rounded"/><input required placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-2 border rounded"/><div className="flex gap-2"><input required maxLength="4" placeholder="PIN (4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/><select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Staff</option><option value="admin">Admin</option></select></div><button className="w-full bg-logo-green-700 text-white py-2 rounded font-bold">Add User</button></form></div></div>}
-                        
-                        {view === 'history' && user.role === 'admin' && (
-                            <div className="space-y-4 fade-in">
-                                <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.History/> History</h2>
-                                <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100 grid grid-cols-2 gap-3"><div><label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label><input type="date" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-sm"/></div><div><label className="block text-xs font-medium text-slate-500 mb-1">End Date</label><input type="date" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-sm"/></div></div>
-                                {filteredHistory.length === 0 ? <div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No historical reports.</div> : filteredHistory.map(h => (<div key={h.id} className="bg-white rounded-xl shadow-sm border overflow-hidden"><div onClick={()=>setExpandedHistoryId(expandedHistoryId===h.id?null:h.id)} className="p-4 flex justify-between items-center cursor-pointer"><div><h3 className="font-bold text-slate-800">{h.date}</h3><p className="text-xs text-slate-400">{h.branch || 'Unknown'} • Closed by {h.closedBy}</p></div><div className="flex items-center gap-4"><button onClick={(e)=>{e.stopPropagation();downloadCSV(h)}}><Icons.Download size={20} className="text-slate-400 hover:text-logo-green-700"/></button><button onClick={(e)=>{e.stopPropagation();handleDeleteHistory(h.id)}}><Icons.Trash2 size={20} className="text-slate-400 hover:text-red-500"/></button><span className="font-bold text-logo-green-700">{formatCurrency(h.stats.totalRevenue)}</span>{expandedHistoryId===h.id?<Icons.ChevronUp size={20} className="text-slate-400"/>:<Icons.ChevronDown size={20} className="text-slate-400"/>}</div></div>{expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm"><h4 className="font-bold text-xs uppercase text-slate-400 mb-2">Transactions</h4>{h.transactions.map((t,i)=><div key={i} className="flex justify-between py-1 border-b last:border-0 border-slate-200"><span>{t.time} - {t.clientName} ({t.service})</span><span className="font-bold">{formatCurrency(t.amount)}</span></div>)}<h4 className="font-bold text-xs uppercase text-slate-400 mt-4 mb-2">Expenses</h4>{(h.expenses||[]).map((e,i)=><div key={i} className="flex justify-between py-1 border-b last:border-0 border-red-100 text-red-600"><span>{e.description} ({e.recordedBy})</span><span className="font-bold">-{formatCurrency(e.amount)}</span></div>)}</div>}</div>))}
+                        {/* Data List Management View */}
+                        {view === 'lists' && user.role === 'admin' && (
+                            <ListManagement 
+                                therapists={therapistsList} 
+                                services={servicesList}
+                                durations={durationsList}
+                                onAdd={handleAddItem} 
+                                onDelete={handleDeleteItem}
+                                onEdit={handleEditItem}
+                            />
+                        )}
+
+                        {view === 'team' && user.role === 'admin' && (
+                            <div className="space-y-6 fade-in">
+                                <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.Users/> Manage Staff</h2>
+                                <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                                    {users.filter(u => {
+                                        // Owner Admin sees everyone
+                                        if (user.username === 'admin') return true;
+
+                                        // Regular Admin sees themselves
+                                        if (u.id === user.id) return true;
+
+                                        // Regular Admin sees staff/admins in their branch
+                                        // We exclude the Owner ('admin') from regular views to avoid clutter
+                                        if (u.username === 'admin') return false;
+
+                                        return u.currentBranch === user.currentBranch;
+                                    })
+                                    .sort((a, b) => {
+                                        // Sort by Online status first
+                                        const aOnline = isUserOnline(a.lastActive);
+                                        const bOnline = isUserOnline(b.lastActive);
+                                        if (aOnline && !bOnline) return -1;
+                                        if (!aOnline && bOnline) return 1;
+                                        // Then by Name
+                                        return a.name.localeCompare(b.name);
+                                    })
+                                    .map(u=>(
+                                        <div 
+                                            key={u.id} 
+                                            className="p-4 border-b flex justify-between items-center hover:bg-slate-50 transition"
+                                        >
+                                            <div>
+                                                <h3 className="font-bold flex items-center">
+                                                    {u.name} 
+                                                    {u.username === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-logo-green-100 text-logo-green-700 ml-2">OWNER</span>}
+                                                    {u.username !== 'admin' && u.role === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">ADMIN</span>}
+                                                    {u.role === 'staff' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ml-2">STAFF</span>}
+                                                    {/* Online Indicator */}
+                                                    {isUserOnline(u.lastActive) && (
+                                                        <span className="ml-2 flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200 animate-pulse">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Online
+                                                        </span>
+                                                    )}
+                                                </h3>
+                                                <p className="text-xs text-slate-400">
+                                                    @{u.username} • {u.currentBranch || 'Unknown Branch'}
+                                                </p>
+                                            </div>
+                                            <div className="flex gap-2 items-center">
+                                                {/* Toggle Role Button (Owner Admin only) */}
+                                                {user.username === 'admin' && u.username !== 'admin' && (
+                                                    <button
+                                                        onClick={(e)=>{e.stopPropagation(); handleToggleRole(u);}}
+                                                        className={`p-1 rounded transition ${u.role === 'admin' ? 'text-orange-400 hover:text-orange-600 hover:bg-orange-50' : 'text-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                                        title={u.role === 'admin' ? "Demote to Staff" : "Promote to Admin"}
+                                                    >
+                                                        {u.role === 'admin' ? <Icons.User size={16}/> : <Icons.ShieldCheck size={16}/>}
+                                                    </button>
+                                                )}
+
+                                                {/* Explicit View/Reset PIN button (Owner Admin only) */}
+                                                {user.username === 'admin' && (
+                                                    <button
+                                                        onClick={(e)=>{e.stopPropagation(); setEditUserModal({ isOpen: true, user: u, newPin: '' });}}
+                                                        className="text-slate-300 hover:text-logo-green-700 p-1"
+                                                        title="View Username / Reset PIN"
+                                                    >
+                                                        <Icons.Lock size={16}/>
+                                                    </button>
+                                                )}
+
+                                                {/* Delete button visible to all Admins */}
+                                                {user.role === 'admin' && (
+                                                    <button 
+                                                        onClick={(e)=>{e.stopPropagation(); handleDeleteUser(u.id)}} 
+                                                        className="text-slate-300 hover:text-red-500 p-1"
+                                                        title="Delete User"
+                                                    >
+                                                        <Icons.Trash2 size={16}/>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="bg-white rounded-xl shadow-sm border p-6">
+                                    <h3 className="font-bold mb-4">Add Staff</h3>
+                                    <form onSubmit={handleAddUser} className="space-y-4">
+                                        <input required placeholder="Name" value={newUser.name} onChange={e=>setNewUser({...newUser, name:e.target.value})} className="w-full p-2 border rounded"/>
+                                        <input required placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-2 border rounded"/>
+                                        <div className="flex gap-2"><input required maxLength="4" placeholder="PIN (Min 4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/><select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
+                                        <button className="w-full bg-logo-green-700 text-white py-2 rounded font-bold">Add User</button>
+                                    </form>
+                                </div>
                             </div>
                         )}
 
-                        {/* Global Modal & Loader */}
+                        {view === 'history' && user.role === 'admin' && (
+                            <div className="space-y-4 fade-in">
+                                <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.History/> History</h2>
+                                
+                                {/* Date Range Filters */}
+                                <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100 grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label>
+                                        <input type="date" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-sm"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-500 mb-1">End Date</label>
+                                        <input type="date" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-sm"/>
+                                    </div>
+                                </div>
+
+                                {filteredHistory.length === 0 ? (
+                                    <div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No historical reports found for this period.</div>
+                                ) : (
+                                    filteredHistory.map(h => (
+                                        <div key={h.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                                            <div onClick={()=>setExpandedHistoryId(expandedHistoryId===h.id?null:h.id)} className="p-4 flex justify-between items-center cursor-pointer">
+                                                <div><h3 className="font-bold text-slate-800">{h.date}</h3><p className="text-xs text-slate-400">{h.branch || 'Unknown'} • Closed by {h.closedBy}</p></div>
+                                                <div className="flex items-center gap-4">
+                                                    <button onClick={(e)=>{e.stopPropagation();downloadCSV(h)}} title="Download CSV"><Icons.Download size={20} className="text-slate-400 hover:text-logo-green-700"/></button>
+                                                    <button onClick={(e)=>{e.stopPropagation();handleDeleteHistory(h.id, h.date)}} title="Delete Report"><Icons.Trash2 size={20} className="text-slate-400 hover:text-red-500"/></button>
+                                                    <span className="font-bold text-logo-green-700">{formatCurrency(h.stats.totalRevenue)}</span>
+                                                    {expandedHistoryId===h.id?<Icons.ChevronUp size={20} className="text-slate-400"/>:<Icons.ChevronDown size={20} className="text-slate-400"/>}
+                                                </div>
+                                            </div>
+                                            {expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm">{h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.clientName} ({t.service})</span><span className="font-bold">{formatCurrency(t.amount)}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Notes: {t.notes}</span>}</div>)}</div>}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+
+                        {/* Global Modal */}
                         {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
+                        
+                        {/* Loading Overlay */}
                         {isGlobalLoading && <LoadingOverlay message="Processing..." />}
                     </main>
                     {view === 'dashboard' && <button onClick={()=>setView('add')} className="fixed bottom-6 right-6 bg-logo-green-700 text-white p-4 rounded-full shadow-lg hover:scale-105 transition-transform"><Icons.Plus size={28}/></button>}
-                    <AdminResetUserModal editUserModal={editUserModal} setEditUserModal={setEditUserModal} handleResetPin={handleResetPin} />
+
+                    {/* Admin Reset User Modal */}
+                    <AdminResetUserModal 
+                        editUserModal={editUserModal} 
+                        setEditUserModal={setEditUserModal} 
+                        handleResetPin={handleResetPin}
+                    />
                 </div>
             );
         };
