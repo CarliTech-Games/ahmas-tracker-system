@@ -489,7 +489,7 @@
             const user = editUserModal.user;
             
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 fade-in">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 fade-in">
                     <div className="bg-white rounded-xl p-6 w-full max-w-sm">
                         <h3 className="text-xl font-bold text-logo-green-800 mb-4 flex items-center gap-2">
                             <Icons.UserCog size={24}/> Reset Staff Credentials
@@ -2219,10 +2219,10 @@
                                                 {user.username === 'admin' && u.username !== 'admin' && (
                                                     <button
                                                         onClick={(e)=>{e.stopPropagation(); handleToggleRole(u);}}
-                                                        className={`p-1 rounded transition ${u.role === 'admin' ? 'text-orange-400 hover:text-orange-600 hover:bg-orange-50' : 'text-blue-400 hover:text-blue-600 hover:bg-blue-50'}`} // REVERTED: admin
-                                                        title={u.role === 'admin' ? "Demote to Staff" : "Promote to Admin"} // REVERTED: Staff, Admin
+                                                        className={`p-1 rounded transition ${u.role === 'admin' ? 'text-orange-400 hover:text-orange-600 hover:bg-orange-50' : 'text-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                                        title={u.role === 'admin' ? "Demote to Staff" : "Promote to Admin"}
                                                     >
-                                                        {u.role === 'admin' ? <Icons.User size={16}/> : <Icons.ShieldCheck size={16}/>} // REVERTED: admin
+                                                        {u.role === 'admin' ? <Icons.User size={16}/> : <Icons.ShieldCheck size={16}/>}
                                                     </button>
                                                 )}
 
@@ -2241,7 +2241,7 @@
                                                 {user.role === 'admin' && ( // REVERTED: admin
                                                     <button 
                                                         onClick={(e)=>{e.stopPropagation(); handleDeleteUser(u.id)}} 
-                                                        className="text-slate-300 hover:text-red-500 p-1"
+                                                        className="p-1.5 text-slate-300 hover:text-red-500"
                                                         title="Delete User"
                                                     >
                                                         <Icons.Trash2 size={16}/>
