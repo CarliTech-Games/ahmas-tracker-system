@@ -1721,8 +1721,8 @@
                         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm border border-logo-green-100 text-center relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-logo-green-700 to-teal-600"></div>
                             <div className="w-20 h-20 bg-logo-green-50 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-logo-green-100">
-                                {/* Logo replaced with icon */}
-                                <Icons.Lock size={32} className="text-logo-green-700" />
+                                {/* Logo replaced with text */}
+                                <span className="font-extrabold text-lg text-logo-green-700">AHMAS</span>
                             </div>
                             <h1 className="text-2xl font-bold text-logo-green-900 mb-1">At HOME Massage & Spa</h1>
                             <p className="text-slate-500 mb-6 text-sm">Staff Portal</p>
@@ -1755,10 +1755,12 @@
                     <header className="bg-white border-b border-logo-green-100 sticky top-0 z-20 shadow-sm">
                         <div className="max-w-3xl mx-auto px-4 py-3 flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                {/* Logo replaced with icon */}
-                                <div className={`p-2 rounded-lg shadow-md ${user.role==='admin'?'bg-logo-green-700 shadow-logo-green-200':'bg-slate-600 shadow-slate-200'}`}><Icons.Home size={22} className="text-white"/></div>
+                                {/* Logo replaced with text */}
+                                <div className={`p-2 rounded-lg shadow-md ${user.role==='admin'?'bg-logo-green-700 shadow-logo-green-200':'bg-slate-600 shadow-slate-200'}`}>
+                                    <span className="font-extrabold text-base text-white">AHMAS</span>
+                                </div>
                                 <div>
-                                    <h1 className="text-lg font-bold text-logo-green-800 leading-tight">At HOME Massage & Spa</h1>
+                                    <h1 className="text-lg font-bold text-logo-green-800 leading-tight">At HOME Massage & Spa System</h1>
                                     <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                                         <span className="bg-logo-green-100 text-logo-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Icons.MapPin size={10}/> {user.currentBranch}</span>
                                         <span className="flex items-center gap-1"><Icons.UserCircle2 size={10}/> {user.name}</span>
