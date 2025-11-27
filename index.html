@@ -145,7 +145,10 @@
             Hourglass: (p) => <Icon name="hourglass" {...p} />,
             Pencil: (p) => <Icon name="pencil" {...p} />,
             Loader2: (p) => <Icon name="loader-2" {...p} />,
-            ClipboardList: (p) => <Icon name="clipboard-list" {...p} /> // NEW Icon for Notes
+            ClipboardList: (p) => <Icon name="clipboard-list" {...p} />,
+            MinusCircle: (p) => <Icon name="minus-circle" {...p} />, // NEW Icon for Expense
+            Wallet: (p) => <Icon name="wallet" {...p} />, // NEW Icon for Net Cash
+            TrendingUp: (p) => <Icon name="trending-up" {...p} /> // NEW Icon for Commission
         };
 
         // --- SECURITY HELPER: Hashing Function ---
@@ -191,41 +194,54 @@
             
             // Add State
             const [newItemName, setNewItemName] = useState('');
-            // Service Prices: Map { "60 Mins": 450, "90 Mins": 675 }
             const [newItemPrices, setNewItemPrices] = useState({}); 
+            const [newItemCommission, setNewItemCommission] = useState(''); // ⬅️ NEW: Commission rate for therapists
             
             // Edit State
             const [editingId, setEditingId] = useState(null);
             const [editName, setEditName] = useState('');
             const [editPrices, setEditPrices] = useState({});
+            const [editCommission, setEditCommission] = useState(''); // ⬅️ NEW: Commission rate for therapists (edit)
+
 
             const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
             const closeModal = () => setModal({ ...modal, isOpen: false });
             
             const handleFormSubmit = (e) => {
                 e.preventDefault();
-                // Pass extra data (price map) if it's a service
-                onAdd(activeTab, newItemName, activeTab === 'service' ? newItemPrices : null);
+                let extraData = null;
+                if (activeTab === 'service') {
+                    extraData = newItemPrices;
+                } else if (activeTab === 'therapist') {
+                    extraData = { commissionRate: parseFloat(newItemCommission) || 0 };
+                }
+
+                onAdd(activeTab, newItemName, extraData);
                 setNewItemName('');
                 setNewItemPrices({});
+                setNewItemCommission(''); // Reset commission
             };
             
             const startEdit = (item) => {
                 setEditingId(item.id);
                 setEditName(item.name);
                 setEditPrices(item.prices || {});
+                setEditCommission(item.commissionRate !== undefined ? String(item.commissionRate) : ''); // Load commission
             };
 
             const cancelEdit = () => {
                 setEditingId(null);
                 setEditName('');
                 setEditPrices({});
+                setEditCommission('');
             };
 
             const saveEdit = () => {
                 const updatedData = { name: editName };
                 if (activeTab === 'service') {
                     updatedData.prices = editPrices;
+                } else if (activeTab === 'therapist') { // ⬅️ NEW: Save Commission
+                    updatedData.commissionRate = parseFloat(editCommission) || 0;
                 }
                 onEdit(activeTab, editingId, updatedData);
                 setEditingId(null);
@@ -315,6 +331,23 @@
                                 </div>
                             )}
 
+                             {/* ⬅️ NEW: Commission Rate Input for Therapists */}
+                             {activeTab === 'therapist' && (
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                    <label className="text-xs font-bold text-slate-500 mb-2 uppercase block">Commission Rate (%)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.1"
+                                        placeholder="e.g., 30 for 30%"
+                                        className="w-full p-2 border rounded-lg text-sm outline-none"
+                                        value={newItemCommission}
+                                        onChange={e => setNewItemCommission(e.target.value)}
+                                    />
+                                </div>
+                            )}
+
                             <button type="submit" className="w-full bg-logo-green-600 text-white p-3 rounded-lg font-bold hover:bg-logo-green-700 transition shadow-sm">Add to List</button>
                         </form>
                     </div>
@@ -394,6 +427,33 @@
                                                         ) : (
                                                             <span className="italic text-slate-300">No specific prices set</span>
                                                         )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        
+                                        {/* ⬅️ NEW: Therapist Commission Details (View & Edit) */}
+                                        {activeTab === 'therapist' && (
+                                            <div className="text-xs text-slate-500 w-full">
+                                                {editingId === item.id ? (
+                                                    <div className="mt-2 bg-slate-100 p-2 rounded flex items-center gap-2">
+                                                        <span className="font-bold w-20">Rate (%):</span>
+                                                        <input 
+                                                            type="number" 
+                                                            min="0"
+                                                            max="100"
+                                                            step="0.1"
+                                                            className="w-full p-1 border rounded text-xs"
+                                                            placeholder="0"
+                                                            value={editCommission}
+                                                            onChange={e => setEditCommission(e.target.value)}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                        <span className="bg-teal-50 text-teal-700 px-2 py-0.5 rounded border border-teal-100 font-bold">
+                                                            Commission: {item.commissionRate !== undefined ? `${item.commissionRate}%` : 'N/A'}
+                                                        </span>
                                                     </div>
                                                 )}
                                             </div>
@@ -506,16 +566,18 @@
             const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'staff' });
             const [profileData, setProfileData] = useState({ username: '', pin: '' });
             
+            // ⬅️ UPDATED: Added expense-related fields and viewType
             const [formData, setFormData] = useState({
                 clientName: '', 
                 service: '', 
                 therapist: '', 
                 amount: '', 
                 duration: '', 
-                type: 'booking', 
+                type: 'booking', // booking, sale, expense
                 time: new Date().toTimeString().slice(0, 5),
                 targetBranch: '',
-                notes: '' // ⬅️ NEW: Service Notes Field
+                notes: '',
+                category: '' // Used for Expense reason
             });
             const [modal, setModal] = useState({
                 isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red'
@@ -618,7 +680,6 @@
                         setIsGlobalLoading(true);
                         try {
                             for (const item of queueCopy) {
-                                // Replace placeholder ID if needed, but simple add() generates one.
                                 // IMPORTANT: Restore serverTimestamp behavior
                                 const itemPayload = {
                                     ...item,
@@ -633,7 +694,7 @@
                             
                             // Clear queue only after success
                             setOfflineQueue([]);
-                            setModal({ isOpen: true, type: 'alert', title: 'Sync Complete', message: `Successfully uploaded ${syncedCount} offline bookings.`, confirmColor: 'logo-green', onConfirm: closeModal });
+                            setModal({ isOpen: true, type: 'alert', title: 'Sync Complete', message: `Successfully uploaded ${syncedCount} offline records.`, confirmColor: 'logo-green', onConfirm: closeModal });
 
                         } catch (error) {
                             console.error("Sync failed", error);
@@ -837,7 +898,10 @@
 
             const formatCurrency = (val) => {
                 if (val === undefined || val === null || val === '') return '';
-                return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+                // Handle negative display (for expenses)
+                const isNegative = val < 0;
+                const formatted = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Math.abs(val));
+                return isNegative ? `(${formatted})` : formatted;
             };
             
             // Updated to handle Firestore Timestamps
@@ -870,28 +934,54 @@
 
             const stats = useMemo(() => {
                 const data = filteredTransactions;
-                const totalRevenue = data.filter(t => t.status === 'completed').reduce((acc, curr) => acc + Number(curr.amount), 0);
-                const pendingValue = data.filter(t => t.status === 'pending').reduce((acc, curr) => acc + Number(curr.amount), 0);
+                const salesRevenue = data.filter(t => (t.status === 'completed' || t.status === 'pending') && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
+                const completedRevenue = data.filter(t => t.status === 'completed' && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
+                
+                // ⬅️ NEW: Calculate total expenses
+                const totalExpenses = data.filter(t => t.type === 'expense').reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
+                
+                const pendingValue = data.filter(t => t.status === 'pending' && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 const totalBookings = data.filter(t => t.type === 'booking').length;
                 const completedSales = data.filter(t => t.status === 'completed').length;
-                return { totalRevenue, pendingValue, totalBookings, completedSales };
+                
+                // ⬅️ NEW: Calculate Net Cash
+                const netCash = completedRevenue - totalExpenses;
+
+                return { 
+                    totalRevenue: completedRevenue, // Total actual revenue collected (completed sales)
+                    pendingValue, 
+                    totalBookings, 
+                    completedSales,
+                    totalExpenses, // Total money paid out
+                    netCash // Cash in hand (Completed Sales - Expenses)
+                };
             }, [filteredTransactions]);
 
             // Therapist Stats by Branch
             const therapistStats = useMemo(() => {
                 const grouped = {};
                 
-                filteredTransactions.forEach(t => {
+                // Only consider completed sales transactions for commission calculation
+                const commissionableTransactions = filteredTransactions.filter(t => t.type !== 'expense' && t.status === 'completed');
+
+                commissionableTransactions.forEach(t => {
                     const branch = t.branch || (user.currentBranch !== 'ALL' ? user.currentBranch : 'Unknown');
                     const name = t.therapist ? t.therapist.trim() : 'Unassigned';
                     
                     if (!name) return;
 
+                    // Get therapist's rate from the master list
+                    const therapist = therapistsList.find(th => th.name === name);
+                    const rate = therapist?.commissionRate || 0; // Default to 0%
+
                     if (!grouped[branch]) grouped[branch] = {};
-                    if (!grouped[branch][name]) grouped[branch][name] = { name, count: 0, amount: 0 };
+                    if (!grouped[branch][name]) grouped[branch][name] = { name, count: 0, amount: 0, commission: 0, rate };
                     
+                    const amount = Number(t.amount);
                     grouped[branch][name].count++;
-                    grouped[branch][name].amount += Number(t.amount);
+                    grouped[branch][name].amount += amount;
+                    // ⬅️ NEW: Calculate commission based on rate
+                    grouped[branch][name].commission += amount * (rate / 100);
                 });
 
                 const result = {};
@@ -900,7 +990,7 @@
                 });
                 
                 return result;
-            }, [filteredTransactions, user]);
+            }, [filteredTransactions, user, therapistsList]);
             
             // Filtered History Logic (for Admin view)
             const filteredHistory = useMemo(() => {
@@ -923,19 +1013,19 @@
 
 
             const downloadCSV = (record) => {
-                const headers = ['Date', 'Branch', 'Time', 'Client Name', 'Service', 'Duration', 'Therapist', 'Amount', 'Status', 'Recorded By', 'Notes']; // ⬅️ UPDATED: Added Notes
+                const headers = ['Date', 'Branch', 'Time', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Amount (Income/Expense)', 'Status', 'Recorded By', 'Notes']; // ⬅️ UPDATED: Generic headers
                 const rows = record.transactions.map(t => [
                     `"${record.date}"`, 
                     `"${t.branch || 'N/A'}"`, 
                     `"${t.time}"`, 
-                    `"${t.clientName}"`, 
-                    `"${t.service}"`,
+                    `"${t.clientName || t.description || ''}"`, // Use clientName or description
+                    `"${t.service || t.category || ''}"`, // Use service or category
                     `"${t.duration || ''}"`, 
-                    `"${t.therapist}"`, 
-                    t.amount, 
+                    `"${t.therapist || ''}"`, 
+                    t.amount, // Will be negative for expenses
                     t.status, 
                     `"${t.recordedBy || 'System'}"`,
-                    `"${t.notes || ''}"` // ⬅️ UPDATED: Added Notes to CSV
+                    `"${t.notes || ''}"`
                 ]);
                 const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -949,7 +1039,7 @@
             // --- 4. ACTIONS ---
 
             // List Management Handlers
-            const handleAddItem = async (listType, itemName, itemPrices = null) => {
+            const handleAddItem = async (listType, itemName, extraData = null) => {
                 if (!itemName) return;
 
                 const basePath = `artifacts/${fb.appId}/public/data`;
@@ -960,10 +1050,11 @@
                 if (listType === 'therapist') {
                     collectionName = 'therapists';
                     checkList = therapistsList;
+                    if (extraData) data = { ...data, ...extraData };
                 } else if (listType === 'service') {
                     collectionName = 'services';
                     checkList = servicesList;
-                    if (itemPrices) data.prices = itemPrices; // Store price map
+                    if (extraData) data.prices = extraData; 
                 } else if (listType === 'duration') {
                     collectionName = 'durations';
                     checkList = durationsList;
@@ -1030,7 +1121,7 @@
                     setIsGlobalLoading(false);
                 }
             };
-
+            
             // History Deletion Handler (Admin Only)
             const handleDeleteHistory = (id, date) => {
                 if (user?.role !== 'admin') return;
@@ -1140,46 +1231,64 @@
                 });
             };
 
-            const handleSubmit = async (e) => {
+            // ⬅️ UPDATED: Unified submit handler for Booking/Sale/Expense
+            const handleSubmit = async (e, typeOverride = null) => {
                 e.preventDefault();
+                const transactionType = typeOverride || formData.type;
                 const transactionBranch = user.currentBranch === 'ALL' ? formData.targetBranch : user.currentBranch;
 
-                if (!formData.clientName || !formData.amount || !formData.service || !formData.therapist) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please ensure Client Name, Service, Therapist, and Price are all entered.', onConfirm: closeModal, confirmColor: 'red' });
-                    return;
-                }
-                
                 if (user.currentBranch === 'ALL' && !formData.targetBranch) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Missing Branch', message: 'Please select a Target Branch for this booking.', onConfirm: closeModal, confirmColor: 'red' });
+                    setModal({ isOpen: true, type: 'alert', title: 'Missing Branch', message: 'Please select a Target Branch.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
 
-                // VALIDATION: Check for conflicts (Same Therapist at Exact Same Time)
-                // We need to check BOTH transactions (synced) AND offlineQueue (unsynced)
-                const allBookings = [...transactions, ...offlineQueue];
-                
-                const isConflict = allBookings.some(t => 
-                    t.therapist === formData.therapist && 
-                    t.time === formData.time &&
-                    // Assuming therapists are global-locked per schedule time
-                    true
-                );
+                if (transactionType === 'expense') {
+                    if (!formData.amount || !formData.category || !formData.notes) {
+                         setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please provide Amount, Category, and Description (Notes) for the expense.', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+                } else {
+                    if (!formData.clientName || !formData.amount || !formData.service || !formData.therapist) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please ensure Client Name, Service, Therapist, and Price are all entered.', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
 
-                if (isConflict) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Booking Conflict', message: `Therapist ${formData.therapist} is already booked at ${formData.time}.`, onConfirm: closeModal, confirmColor: 'red' });
-                    return;
+                    // VALIDATION: Check for conflicts (Same Therapist at Exact Same Time)
+                    const allBookings = [...transactions, ...offlineQueue];
+                    const isConflict = allBookings.some(t => 
+                        t.therapist === formData.therapist && 
+                        t.time === formData.time &&
+                        t.type !== 'expense' // Don't check expenses
+                    );
+
+                    if (isConflict) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Booking Conflict', message: `Therapist ${formData.therapist} is already booked at ${formData.time}.`, onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+                }
+                
+                let amountValue = parseFloat(formData.amount);
+                if (transactionType === 'expense') {
+                    // Expenses must be stored as negative numbers for easy calculation
+                    amountValue = -Math.abs(amountValue);
                 }
 
                 // Payload
                 const transactionPayload = {
-                    ...formData,
-                    amount: parseFloat(formData.amount),
-                    status: formData.type === 'sale' ? 'completed' : 'pending',
+                    clientName: formData.clientName || formData.category, // Client name for sales, Category for expenses
+                    description: formData.notes, // Notes field used as description for expenses
+                    service: formData.service,
+                    category: formData.category, // Used for expense category
+                    therapist: formData.therapist,
+                    amount: amountValue,
+                    duration: formData.duration,
+                    type: transactionType,
+                    status: transactionType === 'expense' ? 'completed' : (transactionType === 'sale' ? 'completed' : 'pending'),
+                    time: formData.time,
                     recordedBy: user.name,
                     branch: transactionBranch,
-                    notes: formData.notes.trim() // ⬅️ NEW: Include Notes in payload
+                    notes: formData.notes.trim()
                 };
-
 
                 // OFFLINE HANDLING
                 if (!isOnline) {
@@ -1190,15 +1299,14 @@
                     };
                     setOfflineQueue(prev => [...prev, newOfflineItem]);
                     
-                    // Reset Form
                     const resetTargetBranch = user.currentBranch === 'ALL' ? transactionBranch : user.currentBranch;
                     setFormData({ 
                         clientName: '', service: '', duration: '', therapist: '', amount: '', 
                         type: 'booking', time: new Date().toTimeString().slice(0, 5), 
-                        targetBranch: resetTargetBranch, notes: '' // ⬅️ NEW: Reset Notes
+                        targetBranch: resetTargetBranch, notes: '', category: ''
                     });
 
-                    setModal({ isOpen: true, type: 'alert', title: 'Saved Offline', message: 'Booking queued. Will sync when online.', onConfirm: closeModal, confirmColor: 'orange' });
+                    setModal({ isOpen: true, type: 'alert', title: 'Saved Offline', message: `${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)} queued. Will sync when online.`, onConfirm: closeModal, confirmColor: 'orange' });
                     return;
                 }
 
@@ -1208,35 +1316,30 @@
                     const basePath = `artifacts/${fb.appId}/public/data`;
                     await fb.db.collection(`${basePath}/transactions`).add({
                         ...transactionPayload,
-                        // SECURE: Use Server Timestamp instead of Client Date
                         timestamp: firebase.firestore.FieldValue.serverTimestamp()
                     });
 
                     const resetTargetBranch = user.currentBranch === 'ALL' ? transactionBranch : user.currentBranch;
                     
                     setFormData({ 
-                        clientName: '', 
-                        service: '', 
-                        duration: '',
-                        therapist: '', 
-                        amount: '', 
-                        type: 'booking', 
-                        time: new Date().toTimeString().slice(0, 5),
-                        targetBranch: resetTargetBranch,
-                        notes: '' // ⬅️ NEW: Reset Notes
+                        clientName: '', service: '', duration: '', therapist: '', amount: '', 
+                        type: 'booking', time: new Date().toTimeString().slice(0, 5),
+                        targetBranch: resetTargetBranch, notes: '', category: ''
                     });
                     
-                    setModal({ isOpen: true, type: 'alert', title: 'Booking Saved!', message: `${formData.clientName} recorded for ${transactionBranch}.`, onConfirm: closeModal, confirmColor: 'logo-green' });
+                    setModal({ isOpen: true, type: 'alert', title: 'Record Saved!', message: `${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)} saved for ${transactionBranch}.`, onConfirm: closeModal, confirmColor: 'logo-green' });
 
                     setView('dashboard');
                 } catch (error) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to save booking. Please check connection.', onConfirm: closeModal, confirmColor: 'red' });
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to save record. Please check connection.', onConfirm: closeModal, confirmColor: 'red' });
                 } finally {
                     setIsGlobalLoading(false);
                 }
             };
 
             const toggleStatus = async (t) => {
+                if (t.type === 'expense') return; // Cannot toggle expense status
+
                 const basePath = `artifacts/${fb.appId}/public/data`;
                 const newStatus = t.status === 'pending' ? 'completed' : 'pending';
                 // Optimistic or silent update is usually fine here, but let's wrap for safety if requested
@@ -1283,7 +1386,7 @@
                 }
 
                 setModal({
-                    isOpen: true, type: 'confirm', title: 'Archive & Start New Day?', message: `This will MOVE all active bookings to the History tab and clear the dashboard for tomorrow. You can view and download this report in the History tab anytime.`, confirmColor: 'logo-green',
+                    isOpen: true, type: 'confirm', title: 'Archive & Start New Day?', message: `This will MOVE all active bookings, sales, and expenses to the History tab and clear the dashboard for tomorrow. You can view and download this report in the History tab anytime.`, confirmColor: 'logo-green',
                     onConfirm: async () => {
                         closeModal();
                         setIsGlobalLoading(true);
@@ -1566,6 +1669,7 @@
                         <div className="flex p-1 bg-slate-200/60 rounded-xl mb-6 sticky top-[70px] z-10 backdrop-blur-sm overflow-x-auto">
                             <button onClick={()=>setView('dashboard')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='dashboard'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.LayoutDashboard size={16}/> Daily</button>
                             <button onClick={()=>setView('add')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='add'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Plus size={16}/> Booking</button>
+                            <button onClick={()=>setView('expense')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expense'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.MinusCircle size={16}/> Expense</button>
                             <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
                             {user.role === 'admin' && (
                                 <>
@@ -1586,16 +1690,16 @@
 
                         {view === 'dashboard' && (
                             <div className="space-y-6 fade-in">
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Sales ({user.currentBranch})</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.totalRevenue)}</h3></div>
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Unpaid</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.pendingValue)}</h3></div>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Sales (Completed)</p><h3 className="text-xl font-bold text-slate-800 mt-1">{formatCurrency(stats.totalRevenue)}</h3></div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Expenses</p><h3 className="text-xl font-bold text-slate-800 mt-1 text-red-600">{formatCurrency(stats.totalExpenses)}</h3></div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100 border-l-[3px] border-logo-green-500"><p className="text-slate-500 text-xs font-medium uppercase flex items-center gap-1"><Icons.Wallet size={12}/> Net Cash</p><h3 className="text-xl font-bold text-logo-green-700 mt-1">{formatCurrency(stats.netCash)}</h3></div>
                                 </div>
-
                                 <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100">
-                                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={16} className="text-logo-green-700"/> Therapist Handles (Today)</h3>
+                                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={16} className="text-logo-green-700"/> Payroll Estimate ({user.currentBranch})</h3>
                                     
                                     {Object.keys(therapistStats).length === 0 ? (
-                                        <p className="text-sm text-slate-400 italic text-center py-2">No activity yet.</p>
+                                        <p className="text-sm text-slate-400 italic text-center py-2">No completed activity yet.</p>
                                     ) : (
                                         Object.keys(therapistStats).sort((a, b) => {
                                              const idxA = BRANCHES.indexOf(a);
@@ -1619,8 +1723,10 @@
                                                                 <span className="text-sm font-semibold text-slate-700">{s.name}</span>
                                                             </div>
                                                             <div className="text-right flex flex-col">
-                                                                <span className="text-sm font-bold text-logo-green-700">{s.count} <span className="text-[9px] font-normal text-slate-400 uppercase">Handles</span></span>
-                                                                {user.role === 'admin' && <span className="text-[9px] text-slate-400">{formatCurrency(s.amount)}</span>}
+                                                                <span className="text-sm font-bold text-logo-green-700 flex items-center gap-1">
+                                                                    <Icons.TrendingUp size={12} className="text-teal-600"/> {formatCurrency(s.commission)} 
+                                                                </span>
+                                                                <span className="text-[9px] text-slate-400">({s.rate}% of {formatCurrency(s.amount)})</span>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -1633,7 +1739,7 @@
                                 <div>
                                     <div className="flex justify-between items-center mb-4">
                                         <h2 className="text-lg font-bold text-logo-green-900 flex gap-2">
-                                            <Icons.LayoutDashboard size={18}/> Live Schedule ({showMyShift ? 'My Shift' : user.currentBranch})
+                                            <Icons.LayoutDashboard size={18}/> Live Records ({showMyShift ? 'My Shift' : user.currentBranch})
                                         </h2>
                                         <div className="flex items-center gap-2">
                                             {user.role !== 'admin' && (
@@ -1653,29 +1759,42 @@
                                     {/* Performance Alert */}
                                     {filteredTransactions.length > 50 && (
                                         <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 text-sm flex justify-between items-center rounded-r shadow-sm">
-                                            <span><span className="font-bold">Performance Alert:</span> You have {filteredTransactions.length} active bookings. End the day to archive and speed up the app.</span>
+                                            <span><span className="font-bold">Performance Alert:</span> You have {filteredTransactions.length} active records. End the day to archive and speed up the app.</span>
                                             {user.role === 'admin' && <button onClick={requestEndDay} className="underline font-bold hover:text-orange-900 ml-2 whitespace-nowrap">End Day Now</button>}
                                         </div>
                                     )}
 
-                                    {filteredTransactions.length===0?<div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No bookings found for the current filter.</div>:
+                                    {filteredTransactions.length===0?<div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No records found for the current filter.</div>:
                                     <div className="space-y-3">
                                         {filteredTransactions.map(t=>(
-                                            <div key={t.id} className={`bg-white p-4 rounded-xl border-l-[6px] flex justify-between items-start ${t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400'} shadow-sm`}>
+                                            // ⬅️ UPDATED: Conditional styling based on type
+                                            <div key={t.id} className={`bg-white p-4 rounded-xl border-l-[6px] flex justify-between items-start ${
+                                                t.type === 'expense' ? 'border-l-red-500' : (t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400')
+                                            } shadow-sm`}>
                                                 <div className="flex-1 pr-4">
                                                     {/* Displaying timestamp date for consistency */}
                                                     <div className="flex gap-2 mb-1 items-center">
                                                         <span className="text-[10px] font-bold bg-slate-100 px-2 rounded text-slate-500">{t.branch}</span>
                                                         <span className="text-xs font-mono text-slate-400">{formatDate(t.timestamp)} - {t.time}</span>
                                                     </div>
-                                                    <h3 className="font-bold text-slate-800">{t.clientName}</h3>
+                                                    
+                                                    {/* ⬅️ UPDATED: Display clientName or category */}
+                                                    <h3 className={`font-bold ${t.type === 'expense' ? 'text-red-700' : 'text-slate-800'}`}>
+                                                        {t.type === 'expense' ? `Expense: ${t.category}` : t.clientName}
+                                                    </h3>
+                                                    
                                                     <div className="text-xs text-slate-500 mt-1 flex gap-2 flex-wrap">
-                                                        <span>{t.service}</span>
-                                                        {t.duration && <span> • {t.duration}</span>}
-                                                        <span> • {t.therapist}</span>
+                                                        {t.type === 'expense' ? (
+                                                            <span>{t.notes}</span>
+                                                        ) : (
+                                                            <>
+                                                                <span>{t.service}</span>
+                                                                {t.duration && <span> • {t.duration}</span>}
+                                                                <span> • {t.therapist}</span>
+                                                            </>
+                                                        )}
                                                     </div>
-                                                    {/* ⬅️ NEW: Display Notes */}
-                                                    {t.notes && t.notes.trim() && (
+                                                    {t.notes && t.notes.trim() && t.type !== 'expense' && (
                                                         <div className="mt-2 text-xs bg-slate-50 p-2 rounded border border-slate-200 text-slate-700 flex items-start gap-1">
                                                             <Icons.ClipboardList size={14} className="min-w-[14px] text-logo-green-700 mt-[2px]"/>
                                                             <span className="font-medium">Notes: </span>
@@ -1683,7 +1802,18 @@
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="text-right min-w-[80px]"><div className="font-bold text-lg">{formatCurrency(t.amount)}</div><div className="flex justify-end gap-2 mt-1"><button onClick={()=>toggleStatus(t)} className={`p-1.5 rounded-full ${t.status==='completed'?'bg-logo-green-100 text-logo-green-700':'bg-orange-100 text-orange-600'}`}>{t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}</button>{user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>}</div></div>
+                                                
+                                                <div className="text-right min-w-[80px]">
+                                                    <div className={`font-bold text-lg ${t.type === 'expense' ? 'text-red-600' : (t.status==='completed'?'text-logo-green-700':'text-orange-600')}`}>{formatCurrency(t.amount)}</div>
+                                                    <div className="flex justify-end gap-2 mt-1">
+                                                        {t.type !== 'expense' && (
+                                                            <button onClick={()=>toggleStatus(t)} className={`p-1.5 rounded-full ${t.status==='completed'?'bg-logo-green-100 text-logo-green-700':'bg-orange-100 text-orange-600'}`}>
+                                                                {t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}
+                                                            </button>
+                                                        )}
+                                                        {user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>}
+                                                    </div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>}
@@ -1693,7 +1823,7 @@
 
                         {view === 'add' && (
                             <div className="bg-white rounded-2xl shadow-sm border border-logo-green-100 p-6 fade-in">
-                                <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Icons.Plus size={24} className="text-logo-green-700"/> New Booking</h2>
+                                <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Icons.Plus size={24} className="text-logo-green-700"/> New Booking/Sale</h2>
                                 <form onSubmit={handleSubmit} className="space-y-5">
                                     
                                     {/* Conditional Branch Selector for Owner Admin */}
@@ -1741,7 +1871,7 @@
                                         </select>
                                     </div>
                                     
-                                    {/* ⬅️ NEW: Notes Textarea */}
+                                    {/* Service Notes Textarea */}
                                     <textarea 
                                         placeholder="Service Notes (e.g., Hard pressure, No oil on back, Client prefers quiet)" 
                                         rows="3"
@@ -1762,6 +1892,64 @@
                                         <input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
                                     </div>
                                     <button className="w-full bg-logo-green-700 text-white font-bold py-4 rounded-xl shadow-lg mt-2">Save Booking</button>
+                                </form>
+                            </div>
+                        )}
+                        
+                        {/* ⬅️ NEW: Expense Tracking View */}
+                        {view === 'expense' && (
+                            <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-6 fade-in">
+                                <h2 className="text-xl font-bold text-red-700 mb-6 flex items-center gap-2"><Icons.MinusCircle size={24}/> Log Petty Cash Expense</h2>
+                                <form onSubmit={(e) => handleSubmit(e, 'expense')} className="space-y-5">
+                                    
+                                    {user.currentBranch === 'ALL' ? (
+                                        <div className="relative">
+                                            <Icons.MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" />
+                                            <select 
+                                                required 
+                                                value={formData.targetBranch} 
+                                                onChange={(e)=>setFormData({...formData, targetBranch:e.target.value})} 
+                                                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-700 bg-slate-50 focus:bg-white appearance-none text-slate-600 font-bold border-red-400"
+                                            >
+                                                <option value="" disabled>SELECT BRANCH AFFECTED*</option>
+                                                {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                                            </select>
+                                            <Icons.ChevronDown size={16} className="absolute right-3 top-4 text-slate-400 pointer-events-none"/>
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 bg-red-50 rounded-lg text-sm text-red-800 font-medium flex items-center gap-2"><Icons.MapPin size={16}/> Logging for: {user.currentBranch}</div>
+                                    )}
+
+                                    <div className="flex gap-2">
+                                        <select required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} className="flex-1 p-3 border rounded-xl bg-slate-50 appearance-none">
+                                            <option value="" disabled>Select Category*</option>
+                                            <option value="Supplies">Supplies (Alcohol, Linens, etc.)</option>
+                                            <option value="Maintenance">Maintenance/Repair</option>
+                                            <option value="Utilities">Utilities Payment (Partial)</option>
+                                            <option value="Food/Beverage">Staff Food/Beverage</option>
+                                            <option value="Other">Other Petty Cash</option>
+                                        </select>
+                                        <input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-[120px] p-3 border rounded-xl bg-slate-50"/>
+                                    </div>
+                                    
+                                    <input required 
+                                        type="number" step="0.01" 
+                                        min="0.01"
+                                        placeholder="Amount Spent (P)*" 
+                                        value={formData.amount} 
+                                        onChange={e=>setFormData({...formData, amount:e.target.value})} 
+                                        className="w-full p-3 border rounded-xl bg-slate-50 border-red-300 font-bold"
+                                    />
+                                    
+                                    <textarea 
+                                        required
+                                        placeholder="Description / Reason (e.g. Bought 1 bottle of Isopropyl Alcohol)" 
+                                        rows="3"
+                                        value={formData.notes} 
+                                        onChange={e=>setFormData({...formData, notes:e.target.value})} 
+                                        className="w-full p-3 border rounded-xl bg-slate-50 resize-none"
+                                    />
+                                    <button className="w-full bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg mt-2 hover:bg-red-800">Submit Expense</button>
                                 </form>
                             </div>
                         )}
@@ -1913,11 +2101,11 @@
                                                 <div className="flex items-center gap-4">
                                                     <button onClick={(e)=>{e.stopPropagation();downloadCSV(h)}} title="Download CSV"><Icons.Download size={20} className="text-slate-400 hover:text-logo-green-700"/></button>
                                                     <button onClick={(e)=>{e.stopPropagation();handleDeleteHistory(h.id, h.date)}} title="Delete Report"><Icons.Trash2 size={20} className="text-slate-400 hover:text-red-500"/></button>
-                                                    <span className="font-bold text-logo-green-700">{formatCurrency(h.stats.totalRevenue)}</span>
+                                                    <span className="font-bold text-logo-green-700">{formatCurrency(h.stats.netCash)}</span>
                                                     {expandedHistoryId===h.id?<Icons.ChevronUp size={20} className="text-slate-400"/>:<Icons.ChevronDown size={20} className="text-slate-400"/>}
                                                 </div>
                                             </div>
-                                            {expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm">{h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.clientName} ({t.service})</span><span className="font-bold">{formatCurrency(t.amount)}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Notes: {t.notes}</span>}</div>)}</div>}
+                                            {expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm">{h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.type==='expense'? t.category : t.clientName} ({t.type === 'expense' ? 'Expense' : t.service})</span><span className={`font-bold ${t.type==='expense'?'text-red-600':'text-logo-green-700'}`}>{formatCurrency(t.amount)}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Desc: {t.notes}</span>}</div>)}</div>}
                                         </div>
                                     ))
                                 )}
