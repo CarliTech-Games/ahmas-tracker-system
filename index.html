@@ -1068,20 +1068,47 @@
 
 
             const downloadCSV = (record) => {
-                const headers = ['Date', 'Branch', 'Time', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Amount (Income/Expense)', 'Status', 'Recorded By', 'Notes']; // UPDATED: Generic headers
-                const rows = record.transactions.map(t => [
-                    `"${record.date}"`, 
-                    `"${t.branch || 'N/A'}"`, 
-                    `"${t.time}"`, 
-                    `"${t.clientName || t.description || ''}"`, // Use clientName or description
-                    `"${t.service || t.category || ''}"`, // Use service or category
-                    `"${t.duration || ''}"`, 
-                    `"${t.therapist || ''}"`, 
-                    t.amount, // Will be negative for expenses
-                    t.status, 
-                    `"${t.recordedBy || 'System'}"`,
-                    `"${t.notes || ''}"`
-                ]);
+                // --- MODIFICATION: ADD COMMISSION HEADER AND CALCULATION ---
+                const headers = ['Date', 'Branch', 'Time', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Amount (Income/Expense)', 'Commission Amount', 'Status', 'Recorded By', 'Notes']; 
+                
+                // Helper to safely get commission from archived therapist stats
+                const getCommissionForTransaction = (t, therapistStatsArchive) => {
+                    if (t.type !== 'expense' && t.status !== 'pending' && t.therapist) {
+                        const branch = t.branch || 'Unknown';
+                        const therapistName = t.therapist.trim();
+
+                        if (therapistStatsArchive[branch]) {
+                            const therapistData = therapistStatsArchive[branch].find(s => s.name === therapistName);
+                            if (therapistData) {
+                                // Since the stats contain the total commission for the day, we need to recalculate
+                                // the commission for this single transaction using the saved rate.
+                                return Number(t.amount) * (therapistData.rate / 100);
+                            }
+                        }
+                    }
+                    return 0;
+                };
+
+                const rows = record.transactions.map(t => {
+                    const commissionAmount = getCommissionForTransaction(t, record.therapist_stats || {});
+
+                    return [
+                        `"${record.date}"`, 
+                        `"${t.branch || 'N/A'}"`, 
+                        `"${t.time}"`, 
+                        `"${t.clientName || t.description || ''}"`, // Use clientName or description
+                        `"${t.service || t.category || ''}"`, // Use service or category
+                        `"${t.duration || ''}"`, 
+                        `"${t.therapist || ''}"`, 
+                        t.amount, // Will be negative for expenses
+                        commissionAmount, // NEW: Commission
+                        t.status, 
+                        `"${t.recordedBy || 'System'}"`,
+                        `"${t.notes || ''}"`
+                    ];
+                });
+                // --- END MODIFICATION ---
+                
                 const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
@@ -2242,9 +2269,16 @@
                                                     {h.therapist_stats && Object.keys(h.therapist_stats).length > 0 && (
                                                         <div className="mb-4">
                                                             <h4 className="text-xs font-bold text-logo-green-700 uppercase mb-2 flex items-center gap-1"><Icons.Trophy size={12}/> Daily Commission Breakdown:</h4>
+                                                            {/* Check if the archived report contains multiple branches */}
+                                                            {Object.keys(h.therapist_stats).length > 1 && (
+                                                                <h5 className="text-[10px] font-bold text-slate-500 uppercase px-1">{h.branch}</h5>
+                                                            )}
+
                                                             {Object.keys(h.therapist_stats).map(branch => (
                                                                 <div key={branch} className="mb-2 last:mb-0">
-                                                                    <h5 className="text-[10px] font-bold text-slate-500 uppercase px-1">{branch}</h5>
+                                                                    {Object.keys(h.therapist_stats).length > 1 && (
+                                                                        <h5 className="text-[10px] font-bold text-slate-500 uppercase px-1">{branch}</h5>
+                                                                    )}
                                                                     <div className="space-y-1">
                                                                         {h.therapist_stats[branch].map(s => (
                                                                             <div key={s.name} className="flex justify-between text-xs border-b border-slate-200 last:border-0 pb-1">
