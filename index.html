@@ -1505,31 +1505,50 @@
                     onConfirm: async () => {
                         closeModal();
                         setIsGlobalLoading(true);
+                        
+                        let historySaveSuccess = false;
+                        
                         try {
                             const basePath = `artifacts/${fb.appId}/public/data`;
                             const historyColl = fb.db.collection(`${basePath}/history`);
                             const transColl = fb.db.collection(`${basePath}/transactions`);
 
+                            // 1. ATTEMPT TO ARCHIVE DATA
                             await historyColl.add({
                                 date: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
                                 timestamp: new Date().toLocaleString(),
-                                // SECURE: Use Server Timestamp
                                 timestamp_val: firebase.firestore.FieldValue.serverTimestamp(),
                                 transactions: filteredTransactions,
                                 stats: stats,
-                                therapist_stats: therapistStats, // NEW: Include the detailed stats
+                                therapist_stats: therapistStats, 
                                 branch: user.currentBranch,
                                 closedBy: user.name
                             });
-
+                            historySaveSuccess = true;
+                            
+                            // 2. IF ARCHIVE SUCCESSFUL, ATTEMPT TO DELETE LIVE DATA
                             const deletePromises = filteredTransactions.map(t => transColl.doc(t.id).delete());
                             await Promise.all(deletePromises);
 
-                            setView('dashboard'); // Stay on dashboard after successful shift close
+                            // 3. COMPLETE SUCCESS
+                            setView('dashboard'); 
                             setModal({ isOpen: true, type: 'alert', title: 'Shift Closed!', message: `Shift transactions successfully archived for ${user.currentBranch}.`, confirmColor: 'logo-green', onConfirm: closeModal });
 
-                        } catch (err) {
-                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to end day. Data preserved.', confirmColor: 'red', onConfirm: closeModal });
+                        } catch (error) {
+                            console.error("End Day Fatal Error:", error);
+                            
+                            // 4. HANDLE FAILURE
+                            let title = 'End Day Failed';
+                            let message = 'An error occurred during the closing process. Your data has been preserved in the Live Records. Please check your connection or contact support.';
+
+                            if (historySaveSuccess) {
+                                // If the history save succeeded but deletion failed:
+                                title = 'Cleanup Failed';
+                                message = 'The shift report was successfully saved to History, but clearing the dashboard failed. Live Records may contain duplicate entries that need manual deletion (Admin only).';
+                            }
+                            
+                            setModal({ isOpen: true, type: 'alert', title: title, message: message, confirmColor: 'red', onConfirm: closeModal });
+                            
                         } finally {
                             setIsGlobalLoading(false);
                         }
