@@ -577,7 +577,8 @@
             const [loginPin, setLoginPin] = useState('');
             const [loginBranch, setLoginBranch] = useState(''); 
             
-            const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'staff' });
+            // UPDATED: Initial role is 'receptionist'
+            const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'receptionist' });
             const [profileData, setProfileData] = useState({ username: '', pin: '' });
             
             // UPDATED: Added expense-related fields and viewType
@@ -754,9 +755,13 @@
                         const needsUpdate = data.filter(u => (u.username === 'admin' && u.pin.length < 20) || (u.username === 'morning' && u.pin.length < 20) || (u.username === 'night' && u.pin.length < 20));
                         let shouldWait = false;
                         for (const u of needsUpdate) {
-                            if (u.pin === '8888' || u.pin === '1111' || u.pin === '2222') {
+                            if (u.pin === '8888') { // Owner/Manager
                                 const hashedPin = await hashPin(u.pin);
-                                await userColl.doc(u.id).update({ pin: hashedPin });
+                                await userColl.doc(u.id).update({ pin: hashedPin, role: 'manager' });
+                                shouldWait = true;
+                            } else if (u.pin === '1111' || u.pin === '2222') { // Receptionist
+                                const hashedPin = await hashPin(u.pin);
+                                await userColl.doc(u.id).update({ pin: hashedPin, role: 'receptionist' });
                                 shouldWait = true;
                             }
                         }
@@ -873,9 +878,10 @@
             
             const seedDefaultUsers = async (db, basePath) => {
                 const defaults = [
-                    { name: 'Owner Admin', username: 'admin', pin: '8888', role: 'admin' },
-                    { name: 'Morning Rec.', username: 'morning', pin: '1111', role: 'staff' },
-                    { name: 'Night Rec.', username: 'night', pin: '2222', role: 'staff' }
+                    // UPDATED ROLES
+                    { name: 'Owner Manager', username: 'admin', pin: '8888', role: 'manager' },
+                    { name: 'Morning Rec.', username: 'morning', pin: '1111', role: 'receptionist' },
+                    { name: 'Night Rec.', username: 'night', pin: '2222', role: 'receptionist' }
                 ];
                 const userColl = db.collection(`${basePath}/users`);
                 const usersToSeed = await Promise.all(defaults.map(async u => {
@@ -925,8 +931,8 @@
                     data = data.filter(t => t.branch === user.currentBranch);
                 }
 
-                // 2. Filter by User (if My Shift is toggled AND user is staff)
-                if (showMyShift && user.role !== 'admin') {
+                // 2. Filter by User (if My Shift is toggled AND user is receptionist)
+                if (showMyShift && user.role !== 'manager') {
                     data = data.filter(t => t.recordedBy === user.name);
                 }
                 
@@ -960,10 +966,10 @@
                 };
             }, [filteredTransactions]);
 
-            // NEW: Branch-wise Financial Summary (Only calculated/shown for Owner Admin)
+            // NEW: Branch-wise Financial Summary (Only calculated/shown for Owner Manager)
             const branchFinancials = useMemo(() => {
-                // Only run if the user is the Owner Admin viewing ALL branches
-                if (user?.currentBranch !== 'ALL' || user.role !== 'admin') return null;
+                // Only run if the user is the Owner Manager viewing ALL branches
+                if (user?.currentBranch !== 'ALL' || user.role !== 'manager') return null;
 
                 const grouped = {};
                 // Include all defined branches plus any unknown ones that might exist
@@ -1047,7 +1053,7 @@
                 return result;
             }, [filteredTransactions, user, therapistsList]);
             
-            // Filtered History Logic (for Admin view)
+            // Filtered History Logic (for Manager view)
             const filteredHistory = useMemo(() => {
                 let data = history;
 
@@ -1230,9 +1236,9 @@
                 }
             };
             
-            // History Deletion Handler (Admin Only)
+            // History Deletion Handler (Manager Only)
             const handleDeleteHistory = (id, date) => {
-                if (user?.role !== 'admin') return;
+                if (user?.role !== 'manager') return;
 
                    setModal({
                     isOpen: true, type: 'confirm', title: `Delete Report?`, message: `Are you sure you want to permanently delete the archived report for ${date}? This action cannot be undone.`, confirmColor: 'red',
@@ -1269,8 +1275,8 @@
                     const found = users.find(u => u.username.toLowerCase() === loginUsername.toLowerCase() && u.pin === hashedPinAttempt);
                     
                     if (found) {
-                        if (loginBranch === 'ALL' && found.username !== 'admin') {
-                            setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only the Owner Admin can access the All Branches view.', onConfirm: closeModal, confirmColor: 'red' });
+                        if (loginBranch === 'ALL' && found.role !== 'manager') {
+                            setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only the Owner Manager can access the All Branches view.', onConfirm: closeModal, confirmColor: 'red' });
                             return;
                         }
                         
@@ -1461,8 +1467,8 @@
             };
 
             const requestDelete = (id) => {
-                if (user?.role !== 'admin') {
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can delete.', onConfirm: closeModal, confirmColor: 'red' });
+                if (user?.role !== 'manager') {
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Manager can delete.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
                 setModal({
@@ -1483,14 +1489,11 @@
             };
 
             const requestEndDay = () => {
-                // MODIFICATION: Check if user has permission (Admin OR Staff)
-                if (user?.currentBranch === 'ALL' || (user?.role !== 'admin' && user?.role !== 'staff')) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only authorized Staff/Admin can close the shift/day.', onConfirm: closeModal, confirmColor: 'red' });
+                // MODIFICATION: Check if user has permission (Manager OR Receptionist) AND is not in 'ALL BRANCHES' view
+                if (user?.currentBranch === 'ALL' || (user?.role !== 'manager' && user?.role !== 'receptionist')) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only authorized Receptionist/Manager can close the shift/day on a specific branch view.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
-                
-                // If user is Admin but is logged into a specific branch, they can perform End Day
-                // If user is Staff (role='staff'), they can perform End Day.
                 
                 if (filteredTransactions.length === 0) {
                     setModal({ isOpen: true, type: 'alert', title: 'No Data', message: 'Nothing to save for this branch.', onConfirm: closeModal, confirmColor: 'logo-green' });
@@ -1550,8 +1553,8 @@
                         return;
                     }
                     
-                    if (newUser.pin.length !== 4 && newUser.role === 'staff') {
-                        setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: 'Staff PINs must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
+                    if (newUser.pin.length !== 4 && newUser.role === 'receptionist') {
+                        setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: 'Receptionist PINs must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
                         return;
                     }
 
@@ -1574,7 +1577,8 @@
                     }
 
                     await fb.db.collection(`${basePath}/users`).add(newUserPayload);
-                    setNewUser({ name: '', username: '', pin: '', role: 'staff' });
+                    // UPDATED: Reset role to 'receptionist'
+                    setNewUser({ name: '', username: '', pin: '', role: 'receptionist' });
                 } catch(err) {
                     setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to add user.', confirmColor: 'red', onConfirm: closeModal });
                 } finally {
@@ -1603,13 +1607,14 @@
 
             // NEW: Owner Toggle Role Function
             const handleToggleRole = (targetUser) => {
-                const newRole = targetUser.role === 'admin' ? 'staff' : 'admin';
-                const action = newRole === 'admin' ? 'Promote' : 'Demote';
+                // UPDATED: Toggle between manager and receptionist
+                const newRole = targetUser.role === 'manager' ? 'receptionist' : 'manager';
+                const action = newRole === 'manager' ? 'Promote to Manager' : 'Demote to Receptionist';
                 
                 setModal({
                     isOpen: true,
                     type: 'confirm',
-                    title: `${action} Staff?`,
+                    title: action,
                     message: `Are you sure you want to change ${targetUser.name}'s role to ${newRole.toUpperCase()}?`,
                     confirmColor: 'logo-green',
                     onConfirm: async () => {
@@ -1637,8 +1642,8 @@
                 setIsGlobalLoading(true);
                 try {
                     if (newPin && newPin.length > 0) {
-                        // Policy Check: Staff/Admin 4 digits
-                        const requiredLen = 4; // Assuming all users use 4 digits for pin, only admin special is username 'admin'
+                        // Policy Check: Manager/Receptionist 4 digits
+                        const requiredLen = 4;
                         if (newPin.length !== requiredLen) {
                              setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: `Your PIN must be exactly ${requiredLen} digits.`, onConfirm: closeModal, confirmColor: 'red' });
                              return;
@@ -1677,7 +1682,7 @@
                 const newPin = editUserModal.newPin;
 
                 if (newPin.length !== 4) {
-                    setModal({ isOpen: true, type: 'alert', title: 'PIN Error', message: 'Staff/Admin PIN must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
+                    setModal({ isOpen: true, type: 'alert', title: 'PIN Error', message: 'Receptionist/Manager PIN must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
                 
@@ -1788,7 +1793,8 @@
                             {/* UPDATED: Expense button label */}
                             <button onClick={()=>setView('expense')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expense'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.MinusCircle size={16}/> Expense</button>
                             <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
-                            {user.role === 'admin' && (
+                            {/* UPDATED: Only show Lists/History/Team if role is 'manager' */}
+                            {user.role === 'manager' && (
                                 <>
                                     <button onClick={()=>setView('lists')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='lists'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.ShieldCheck size={16}/> Lists</button>
                                     <button onClick={()=>setView('history')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='history'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.History size={16}/> History</button>
@@ -1808,8 +1814,8 @@
                         {view === 'dashboard' && (
                             <div className="space-y-6 fade-in">
                                 
-                                {/* NEW: ALL BRANCH SUMMARY (Owner Admin only) */}
-                                {user.currentBranch === 'ALL' && branchFinancials && branchFinancials.length > 0 && (
+                                {/* NEW: ALL BRANCH SUMMARY (Owner Manager only) */}
+                                {user.currentBranch === 'ALL' && user.role === 'manager' && branchFinancials && branchFinancials.length > 0 && (
                                     <div className="bg-white p-4 rounded-xl shadow-lg border border-teal-100 space-y-4">
                                         <h3 className="text-sm font-bold text-teal-700 uppercase tracking-wider flex items-center gap-2"><Icons.TrendingUp size={16}/> All Branch Summary</h3>
                                         <div className="grid grid-cols-2 gap-3 mb-4 border-b pb-3 border-slate-100">
@@ -1900,7 +1906,8 @@
                                             <Icons.LayoutDashboard size={18}/> Live Records ({showMyShift ? 'My Shift' : user.currentBranch})
                                         </h2>
                                         <div className="flex items-center gap-2">
-                                            {user.role !== 'admin' && (
+                                            {/* UPDATED: Show "My Shift" toggle for receptionist */}
+                                            {user.role === 'receptionist' && (
                                                 <button 
                                                     onClick={() => setShowMyShift(!showMyShift)}
                                                     className={`text-[10px] font-bold ${showMyShift ? 'bg-logo-green-700 text-white' : 'bg-logo-green-50 text-logo-green-700'} px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1 items-center transition-colors`}
@@ -1908,7 +1915,7 @@
                                                     <Icons.User size={12}/> {showMyShift ? 'Showing My Shift' : 'Show Only Mine'}
                                                 </button>
                                             )}
-                                            {/* MODIFICATION: The 'End Day' button is now visible if the user is NOT the 'ALL BRANCHES' owner view, allowing staff and specific-branch admins to archive. */}
+                                            {/* 'End Day' button is visible if the user is in a specific branch (Manager or Receptionist) */}
                                             {user.currentBranch !== 'ALL' && (
                                                 <button onClick={requestEndDay} className="text-[10px] font-bold text-logo-green-700 bg-logo-green-50 px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1"><Icons.Archive size={12}/> End Day</button>
                                             )}
@@ -1970,7 +1977,7 @@
                                                                 {t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}
                                                             </button>
                                                         )}
-                                                        {user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>}
+                                                        {user.role==='manager'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1985,7 +1992,7 @@
                                 <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Icons.Plus size={24} className="text-logo-green-700"/> New Booking/Sale</h2>
                                 <form onSubmit={handleSubmit} className="space-y-5">
                                     
-                                    {/* Conditional Branch Selector for Owner Admin */}
+                                    {/* Conditional Branch Selector for Owner Manager */}
                                     {user.currentBranch === 'ALL' ? (
                                         <div className="relative">
                                             <Icons.MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" />
@@ -2128,7 +2135,8 @@
                         )}
                         
                         {/* Data List Management View */}
-                        {view === 'lists' && user.role === 'admin' && (
+                        {/* UPDATED: Only visible to manager */}
+                        {view === 'lists' && user.role === 'manager' && (
                             <ListManagement 
                                 therapists={therapistsList} 
                                 services={servicesList}
@@ -2139,19 +2147,18 @@
                             />
                         )}
 
-                        {view === 'team' && user.role === 'admin' && (
+                        {view === 'team' && user.role === 'manager' && (
                             <div className="space-y-6 fade-in">
                                 <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.Users/> Manage Staff</h2>
                                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
                                     {users.filter(u => {
-                                        // Owner Admin sees everyone
+                                        // Owner Manager sees everyone
                                         if (user.username === 'admin') return true;
 
-                                        // Regular Admin sees themselves
+                                        // Manager/Receptionist sees themselves
                                         if (u.id === user.id) return true;
 
-                                        // Regular Admin sees staff/admins in their branch
-                                        // We exclude the Owner ('admin') from regular views to avoid clutter
+                                        // Manager sees other users in their branch
                                         if (u.username === 'admin') return false;
 
                                         return u.currentBranch === user.currentBranch;
@@ -2173,9 +2180,10 @@
                                             <div>
                                                 <h3 className="font-bold flex items-center">
                                                     {u.name} 
-                                                    {u.username === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-logo-green-100 text-logo-green-700 ml-2">OWNER</span>}
-                                                    {u.username !== 'admin' && u.role === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">ADMIN</span>}
-                                                    {u.role === 'staff' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ml-2">STAFF</span>}
+                                                    {u.username === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-logo-green-100 text-logo-green-700 ml-2">OWNER/MANAGER</span>}
+                                                    {/* UPDATED: Display role names */}
+                                                    {u.username !== 'admin' && u.role === 'manager' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">MANAGER</span>}
+                                                    {u.role === 'receptionist' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ml-2">RECEPTIONIST</span>}
                                                     {/* Online Indicator */}
                                                     {isUserOnline(u.lastActive) && (
                                                         <span className="ml-2 flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200 animate-pulse">
@@ -2188,18 +2196,18 @@
                                                 </p>
                                             </div>
                                             <div className="flex gap-2 items-center">
-                                                {/* Toggle Role Button (Owner Admin only) */}
+                                                {/* Toggle Role Button (Owner Manager only) */}
                                                 {user.username === 'admin' && u.username !== 'admin' && (
                                                     <button
                                                         onClick={(e)=>{e.stopPropagation(); handleToggleRole(u);}}
-                                                        className={`p-1 rounded transition ${u.role === 'admin' ? 'text-orange-400 hover:text-orange-600 hover:bg-orange-50' : 'text-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                                                        title={u.role === 'admin' ? "Demote to Staff" : "Promote to Admin"}
+                                                        className={`p-1 rounded transition ${u.role === 'manager' ? 'text-orange-400 hover:text-orange-600 hover:bg-orange-50' : 'text-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                                        title={u.role === 'manager' ? "Demote to Receptionist" : "Promote to Manager"}
                                                     >
-                                                        {u.role === 'admin' ? <Icons.User size={16}/> : <Icons.ShieldCheck size={16}/>}
+                                                        {u.role === 'manager' ? <Icons.User size={16}/> : <Icons.ShieldCheck size={16}/>}
                                                     </button>
                                                 )}
 
-                                                {/* Explicit View/Reset PIN button (Owner Admin only) */}
+                                                {/* Explicit View/Reset PIN button (Owner Manager only) */}
                                                 {user.username === 'admin' && (
                                                     <button
                                                         onClick={(e)=>{e.stopPropagation(); setEditUserModal({ isOpen: true, user: u, newPin: '' });}}
@@ -2210,8 +2218,8 @@
                                                     </button>
                                                 )}
 
-                                                {/* Delete button visible to all Admins */}
-                                                {user.role === 'admin' && (
+                                                {/* Delete button visible to Manager */}
+                                                {user.role === 'manager' && (
                                                     <button 
                                                         onClick={(e)=>{e.stopPropagation(); handleDeleteUser(u.id)}} 
                                                         className="text-slate-300 hover:text-red-500 p-1"
@@ -2229,14 +2237,21 @@
                                     <form onSubmit={handleAddUser} className="space-y-4">
                                         <input required placeholder="Name" value={newUser.name} onChange={e=>setNewUser({...newUser, name:e.target.value})} className="w-full p-2 border rounded"/>
                                         <input required placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-2 border rounded"/>
-                                        <div className="flex gap-2"><input required maxLength="4" placeholder="PIN (4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/><select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
+                                        <div className="flex gap-2">
+                                            <input required maxLength="4" placeholder="PIN (4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/>
+                                            {/* UPDATED: Role options */}
+                                            <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded">
+                                                <option value="receptionist">Receptionist</option>
+                                                <option value="manager">Manager</option>
+                                            </select>
+                                        </div>
                                         <button className="w-full bg-logo-green-700 text-white py-2 rounded font-bold">Add User</button>
                                     </form>
                                 </div>
                             </div>
                         )}
 
-                        {view === 'history' && user.role === 'admin' && (
+                        {view === 'history' && user.role === 'manager' && (
                             <div className="space-y-4 fade-in">
                                 <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.History/> History</h2>
                                 
