@@ -146,9 +146,9 @@
             Pencil: (p) => <Icon name="pencil" {...p} />,
             Loader2: (p) => <Icon name="loader-2" {...p} />,
             ClipboardList: (p) => <Icon name="clipboard-list" {...p} />,
-            MinusCircle: (p) => <Icon name="minus-circle" {...p} />, // NEW Icon for Expense
-            Wallet: (p) => <Icon name="wallet" {...p} />, // NEW Icon for Net Cash
-            TrendingUp: (p) => <Icon name="trending-up" {...p} /> // NEW Icon for Commission
+            MinusCircle: (p) => <Icon name="minus-circle" {...p} />,
+            Wallet: (p) => <Icon name="wallet" {...p} />,
+            TrendingUp: (p) => <Icon name="trending-up" {...p} /> 
         };
 
         // --- SECURITY HELPER: Hashing Function ---
@@ -195,13 +195,13 @@
             // Add State
             const [newItemName, setNewItemName] = useState('');
             const [newItemPrices, setNewItemPrices] = useState({}); 
-            const [newItemCommission, setNewItemCommission] = useState(''); // ⬅️ NEW: Commission rate for therapists
+            const [newItemCommission, setNewItemCommission] = useState(''); 
             
             // Edit State
             const [editingId, setEditingId] = useState(null);
             const [editName, setEditName] = useState('');
             const [editPrices, setEditPrices] = useState({});
-            const [editCommission, setEditCommission] = useState(''); // ⬅️ NEW: Commission rate for therapists (edit)
+            const [editCommission, setEditCommission] = useState(''); 
 
 
             const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
@@ -219,14 +219,14 @@
                 onAdd(activeTab, newItemName, extraData);
                 setNewItemName('');
                 setNewItemPrices({});
-                setNewItemCommission(''); // Reset commission
+                setNewItemCommission(''); 
             };
             
             const startEdit = (item) => {
                 setEditingId(item.id);
                 setEditName(item.name);
                 setEditPrices(item.prices || {});
-                setEditCommission(item.commissionRate !== undefined ? String(item.commissionRate) : ''); // Load commission
+                setEditCommission(item.commissionRate !== undefined ? String(item.commissionRate) : ''); 
             };
 
             const cancelEdit = () => {
@@ -240,7 +240,7 @@
                 const updatedData = { name: editName };
                 if (activeTab === 'service') {
                     updatedData.prices = editPrices;
-                } else if (activeTab === 'therapist') { // ⬅️ NEW: Save Commission
+                } else if (activeTab === 'therapist') { 
                     updatedData.commissionRate = parseFloat(editCommission) || 0;
                 }
                 onEdit(activeTab, editingId, updatedData);
@@ -331,7 +331,7 @@
                                 </div>
                             )}
 
-                             {/* ⬅️ NEW: Commission Rate Input for Therapists */}
+                             {/* Commission Rate Input for Therapists */}
                              {activeTab === 'therapist' && (
                                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                                     <label className="text-xs font-bold text-slate-500 mb-2 uppercase block">Commission Rate (%)</label>
@@ -432,7 +432,7 @@
                                             </div>
                                         )}
                                         
-                                        {/* ⬅️ NEW: Therapist Commission Details (View & Edit) */}
+                                        {/* Therapist Commission Details (View & Edit) */}
                                         {activeTab === 'therapist' && (
                                             <div className="text-xs text-slate-500 w-full">
                                                 {editingId === item.id ? (
@@ -566,7 +566,7 @@
             const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'staff' });
             const [profileData, setProfileData] = useState({ username: '', pin: '' });
             
-            // ⬅️ UPDATED: Added expense-related fields and viewType
+            // UPDATED: Added expense-related fields and viewType
             const [formData, setFormData] = useState({
                 clientName: '', 
                 service: '', 
@@ -937,14 +937,14 @@
                 const salesRevenue = data.filter(t => (t.status === 'completed' || t.status === 'pending') && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 const completedRevenue = data.filter(t => t.status === 'completed' && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 
-                // ⬅️ NEW: Calculate total expenses
+                // Calculate total expenses
                 const totalExpenses = data.filter(t => t.type === 'expense').reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
                 
                 const pendingValue = data.filter(t => t.status === 'pending' && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 const totalBookings = data.filter(t => t.type === 'booking').length;
                 const completedSales = data.filter(t => t.status === 'completed').length;
                 
-                // ⬅️ NEW: Calculate Net Cash
+                // Calculate Net Cash
                 const netCash = completedRevenue - totalExpenses;
 
                 return { 
@@ -980,7 +980,7 @@
                     const amount = Number(t.amount);
                     grouped[branch][name].count++;
                     grouped[branch][name].amount += amount;
-                    // ⬅️ NEW: Calculate commission based on rate
+                    // Calculate commission based on rate
                     grouped[branch][name].commission += amount * (rate / 100);
                 });
 
@@ -1013,7 +1013,7 @@
 
 
             const downloadCSV = (record) => {
-                const headers = ['Date', 'Branch', 'Time', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Amount (Income/Expense)', 'Status', 'Recorded By', 'Notes']; // ⬅️ UPDATED: Generic headers
+                const headers = ['Date', 'Branch', 'Time', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Amount (Income/Expense)', 'Status', 'Recorded By', 'Notes']; // UPDATED: Generic headers
                 const rows = record.transactions.map(t => [
                     `"${record.date}"`, 
                     `"${t.branch || 'N/A'}"`, 
@@ -1231,7 +1231,7 @@
                 });
             };
 
-            // ⬅️ UPDATED: Unified submit handler for Booking/Sale/Expense
+            // UPDATED: Unified submit handler for Booking/Sale/Expense
             const handleSubmit = async (e, typeOverride = null) => {
                 e.preventDefault();
                 const transactionType = typeOverride || formData.type;
@@ -1669,6 +1669,7 @@
                         <div className="flex p-1 bg-slate-200/60 rounded-xl mb-6 sticky top-[70px] z-10 backdrop-blur-sm overflow-x-auto">
                             <button onClick={()=>setView('dashboard')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='dashboard'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.LayoutDashboard size={16}/> Daily</button>
                             <button onClick={()=>setView('add')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='add'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Plus size={16}/> Booking</button>
+                            {/* UPDATED: Expense button label */}
                             <button onClick={()=>setView('expense')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expense'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.MinusCircle size={16}/> Expense</button>
                             <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
                             {user.role === 'admin' && (
@@ -1767,7 +1768,7 @@
                                     {filteredTransactions.length===0?<div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No records found for the current filter.</div>:
                                     <div className="space-y-3">
                                         {filteredTransactions.map(t=>(
-                                            // ⬅️ UPDATED: Conditional styling based on type
+                                            // UPDATED: Conditional styling based on type
                                             <div key={t.id} className={`bg-white p-4 rounded-xl border-l-[6px] flex justify-between items-start ${
                                                 t.type === 'expense' ? 'border-l-red-500' : (t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400')
                                             } shadow-sm`}>
@@ -1778,7 +1779,7 @@
                                                         <span className="text-xs font-mono text-slate-400">{formatDate(t.timestamp)} - {t.time}</span>
                                                     </div>
                                                     
-                                                    {/* ⬅️ UPDATED: Display clientName or category */}
+                                                    {/* UPDATED: Display clientName or category */}
                                                     <h3 className={`font-bold ${t.type === 'expense' ? 'text-red-700' : 'text-slate-800'}`}>
                                                         {t.type === 'expense' ? `Expense: ${t.category}` : t.clientName}
                                                     </h3>
@@ -1896,10 +1897,11 @@
                             </div>
                         )}
                         
-                        {/* ⬅️ NEW: Expense Tracking View */}
+                        {/* NEW: Expense Tracking View */}
                         {view === 'expense' && (
                             <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-6 fade-in">
-                                <h2 className="text-xl font-bold text-red-700 mb-6 flex items-center gap-2"><Icons.MinusCircle size={24}/> Log Petty Cash Expense</h2>
+                                {/* UPDATED: Header label */}
+                                <h2 className="text-xl font-bold text-red-700 mb-6 flex items-center gap-2"><Icons.MinusCircle size={24}/> Log Expense</h2>
                                 <form onSubmit={(e) => handleSubmit(e, 'expense')} className="space-y-5">
                                     
                                     {user.currentBranch === 'ALL' ? (
@@ -1923,11 +1925,12 @@
                                     <div className="flex gap-2">
                                         <select required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} className="flex-1 p-3 border rounded-xl bg-slate-50 appearance-none">
                                             <option value="" disabled>Select Category*</option>
-                                            <option value="Supplies">Supplies (Alcohol, Linens, etc.)</option>
+                                            {/* UPDATED: Removed "Petty Cash" from category descriptions */}
+                                            <option value="Supplies">Supplies (Oil, Linens, etc.)</option>
                                             <option value="Maintenance">Maintenance/Repair</option>
                                             <option value="Utilities">Utilities Payment (Partial)</option>
                                             <option value="Food/Beverage">Staff Food/Beverage</option>
-                                            <option value="Other">Other Petty Cash</option>
+                                            <option value="Other">Other Expense</option>
                                         </select>
                                         <input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-[120px] p-3 border rounded-xl bg-slate-50"/>
                                     </div>
