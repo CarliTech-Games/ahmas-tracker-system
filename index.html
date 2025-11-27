@@ -483,11 +483,12 @@
         };
 
         // --- Admin Reset User Modal ---
-        const AdminResetUserModal = ({ editUserModal, setEditUserModal, handleResetPin }) => {
+        const AdminResetUserModal = ({ editUserModal, setEditUserModal, handleResetPin, userRole }) => {
             if (!editUserModal.isOpen || !editUserModal.user) return null;
 
-            const user = editUserModal.user;
-            
+            const targetUser = editUserModal.user;
+            const requiredLen = targetUser.role === 'admin' ? 6 : 4;
+
             return (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 fade-in">
                     <div className="bg-white rounded-xl p-6 w-full max-w-sm">
@@ -497,23 +498,23 @@
 
                         <div className="bg-slate-50 p-4 rounded-lg mb-4">
                             <p className="text-xs text-slate-500 uppercase font-bold">Staff Name:</p>
-                            <p className="font-bold text-slate-800 text-lg mb-2">{user.name}</p>
+                            <p className="font-bold text-slate-800 text-lg mb-2">{targetUser.name}</p>
 
                             <p className="text-xs text-slate-500 uppercase font-bold">Username:</p>
-                            <p className="font-mono text-logo-green-700 text-sm">@{user.username}</p>
+                            <p className="font-mono text-logo-green-700 text-sm">@{targetUser.username}</p>
                         </div>
 
                         <form onSubmit={handleResetPin} className="space-y-4">
                             <label className="block">
-                                <span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN (4 Digits)</span>
+                                <span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN ({requiredLen} Digits)</span>
                                 <input
                                     required
                                     type="password"
                                     inputMode="numeric"
-                                    maxLength="4"
+                                    // Removed maxLength attribute to allow 6 digits in JSX, validation is in handler
                                     value={editUserModal.newPin}
                                     onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })}
-                                    placeholder="Enter new 4-digit PIN"
+                                    placeholder={`Enter new ${requiredLen}-digit PIN`}
                                     className="w-full p-3 border rounded-lg font-mono focus:ring-2 focus:ring-logo-green-500"
                                 />
                             </label>
@@ -755,8 +756,8 @@
                         const needsUpdate = data.filter(u => (u.username === 'admin' && u.pin.length < 20) || (u.username === 'morning' && u.pin.length < 20) || (u.username === 'night' && u.pin.length < 20));
                         let shouldWait = false;
                         for (const u of needsUpdate) {
-                            if (u.pin === '8888') { // Owner/Admin
-                                const hashedPin = await hashPin(u.pin);
+                            if (u.pin === '8888' || u.pin === '888888') { // Owner/Admin
+                                const hashedPin = await hashPin('888888'); // Use the 6-digit default pin for hashing
                                 await userColl.doc(u.id).update({ pin: hashedPin, role: 'admin' }); // REVERTED: admin
                                 shouldWait = true;
                             } else if (u.pin === '1111' || u.pin === '2222') { // Staff
@@ -878,10 +879,10 @@
             
             const seedDefaultUsers = async (db, basePath) => {
                 const defaults = [
-                    // REVERTED ROLES
-                    { name: 'Owner Admin', username: 'admin', pin: '8888', role: 'admin' }, // REVERTED: admin
-                    { name: 'Morning Rec.', username: 'morning', pin: '1111', role: 'staff' }, // REVERTED: staff
-                    { name: 'Night Rec.', username: 'night', pin: '2222', role: 'staff' } // REVERTED: staff
+                    // MODIFIED: Admin PIN set to 6 digits
+                    { name: 'Owner Admin', username: 'admin', pin: '888888', role: 'admin' }, 
+                    { name: 'Morning Rec.', username: 'morning', pin: '1111', role: 'staff' }, 
+                    { name: 'Night Rec.', username: 'night', pin: '2222', role: 'staff' } 
                 ];
                 const userColl = db.collection(`${basePath}/users`);
                 const usersToSeed = await Promise.all(defaults.map(async u => {
@@ -932,7 +933,7 @@
                 }
 
                 // 2. Filter by User (if My Shift is toggled AND user is staff)
-                if (showMyShift && user.role !== 'admin') { // REVERTED: admin
+                if (showMyShift && user.role !== 'admin') { 
                     data = data.filter(t => t.recordedBy === user.name);
                 }
                 
@@ -969,7 +970,7 @@
             // NEW: Branch-wise Financial Summary (Only calculated/shown for Owner Admin)
             const branchFinancials = useMemo(() => {
                 // Only run if the user is the Owner Admin viewing ALL branches
-                if (user?.currentBranch !== 'ALL' || user.role !== 'admin') return null; // REVERTED: admin
+                if (user?.currentBranch !== 'ALL' || user.role !== 'admin') return null; 
 
                 const grouped = {};
                 // Include all defined branches plus any unknown ones that might exist
@@ -1238,7 +1239,7 @@
             
             // History Deletion Handler (Admin Only)
             const handleDeleteHistory = (id, date) => {
-                if (user?.role !== 'admin') return; // REVERTED: admin
+                if (user?.role !== 'admin') return; 
 
                    setModal({
                     isOpen: true, type: 'confirm', title: `Delete Report?`, message: `Are you sure you want to permanently delete the archived report for ${date}? This action cannot be undone.`, confirmColor: 'red',
@@ -1275,8 +1276,8 @@
                     const found = users.find(u => u.username.toLowerCase() === loginUsername.toLowerCase() && u.pin === hashedPinAttempt);
                     
                     if (found) {
-                        if (loginBranch === 'ALL' && found.role !== 'admin') { // REVERTED: admin
-                            setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only the Owner Admin can access the All Branches view.', onConfirm: closeModal, confirmColor: 'red' }); // REVERTED: Admin
+                        if (loginBranch === 'ALL' && found.role !== 'admin') { 
+                            setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only the Owner Admin can access the All Branches view.', onConfirm: closeModal, confirmColor: 'red' }); 
                             return;
                         }
                         
@@ -1467,8 +1468,8 @@
             };
 
             const requestDelete = (id) => {
-                if (user?.role !== 'admin') { // REVERTED: admin
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can delete.', onConfirm: closeModal, confirmColor: 'red' }); // REVERTED: Admin
+                if (user?.role !== 'admin') { 
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can delete.', onConfirm: closeModal, confirmColor: 'red' }); 
                     return;
                 }
                 setModal({
@@ -1489,9 +1490,9 @@
             };
 
             const requestEndDay = () => {
-                // MODIFICATION: Check if user has permission (Admin OR Staff) AND is not in 'ALL BRANCHES' view
-                if (user?.currentBranch === 'ALL' || (user?.role !== 'admin' && user?.role !== 'staff')) { // REVERTED: admin & staff
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only authorized Staff/Admin can close the shift/day on a specific branch view.', onConfirm: closeModal, confirmColor: 'red' }); // REVERTED: Staff/Admin
+                // Check if user has permission (Admin OR Staff) AND is not in 'ALL BRANCHES' view
+                if (user?.currentBranch === 'ALL' || (user?.role !== 'admin' && user?.role !== 'staff')) { 
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only authorized Staff/Admin can close the shift/day on a specific branch view.', onConfirm: closeModal, confirmColor: 'red' }); 
                     return;
                 }
                 
@@ -1572,8 +1573,10 @@
                         return;
                     }
                     
-                    if (newUser.pin.length !== 4 && newUser.role === 'staff') { // REVERTED: staff
-                        setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: 'Staff PINs must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' }); // REVERTED: Staff
+                    // Policy check for new user creation
+                    const requiredLen = newUser.role === 'admin' ? 6 : 4;
+                    if (newUser.pin.length !== requiredLen) { 
+                        setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: `${newUser.role.toUpperCase()} PINs must be exactly ${requiredLen} digits.`, onConfirm: closeModal, confirmColor: 'red' }); 
                         return;
                     }
 
@@ -1597,7 +1600,7 @@
 
                     await fb.db.collection(`${basePath}/users`).add(newUserPayload);
                     // UPDATED: Reset role to 'staff'
-                    setNewUser({ name: '', username: '', pin: '', role: 'staff' }); // REVERTED: staff
+                    setNewUser({ name: '', username: '', pin: '', role: 'staff' }); 
                 } catch(err) {
                     setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to add user.', confirmColor: 'red', onConfirm: closeModal });
                 } finally {
@@ -1626,9 +1629,9 @@
 
             // NEW: Owner Toggle Role Function
             const handleToggleRole = (targetUser) => {
-                // REVERTED: Toggle between admin and staff
-                const newRole = targetUser.role === 'admin' ? 'staff' : 'admin'; // REVERTED: admin & staff
-                const action = newRole === 'admin' ? 'Promote to Admin' : 'Demote to Staff'; // REVERTED: Admin & Staff
+                // Toggle between admin and staff
+                const newRole = targetUser.role === 'admin' ? 'staff' : 'admin'; 
+                const action = newRole === 'admin' ? 'Promote to Admin' : 'Demote to Staff'; 
                 
                 setModal({
                     isOpen: true,
@@ -1661,8 +1664,9 @@
                 setIsGlobalLoading(true);
                 try {
                     if (newPin && newPin.length > 0) {
-                        // Policy Check: Staff/Admin 4 digits
-                        const requiredLen = 4;
+                        // MODIFIED: Policy Check based on role for 4 or 6 digits
+                        const requiredLen = user.role === 'admin' ? 6 : 4; 
+                        
                         if (newPin.length !== requiredLen) {
                              setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: `Your PIN must be exactly ${requiredLen} digits.`, onConfirm: closeModal, confirmColor: 'red' });
                              return;
@@ -1700,8 +1704,11 @@
                 const targetUser = editUserModal.user;
                 const newPin = editUserModal.newPin;
 
-                if (newPin.length !== 4) {
-                    setModal({ isOpen: true, type: 'alert', title: 'PIN Error', message: 'Staff/Admin PIN must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' }); // REVERTED: Staff/Admin
+                // MODIFIED: Check length based on target user's role
+                const requiredLen = targetUser.role === 'admin' ? 6 : 4;
+
+                if (newPin.length !== requiredLen) {
+                    setModal({ isOpen: true, type: 'alert', title: 'PIN Error', message: `${targetUser.role.toUpperCase()} PIN must be exactly ${requiredLen} digits.`, onConfirm: closeModal, confirmColor: 'red' }); 
                     return;
                 }
                 
@@ -1813,7 +1820,7 @@
                             <button onClick={()=>setView('expense')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expense'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.MinusCircle size={16}/> Expense</button>
                             <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
                             {/* REVERTED: Only show Lists/History/Team if role is 'admin' */}
-                            {user.role === 'admin' && ( // REVERTED: admin
+                            {user.role === 'admin' && ( 
                                 <>
                                     <button onClick={()=>setView('lists')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='lists'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.ShieldCheck size={16}/> Lists</button>
                                     <button onClick={()=>setView('history')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='history'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.History size={16}/> History</button>
@@ -1834,7 +1841,7 @@
                             <div className="space-y-6 fade-in">
                                 
                                 {/* NEW: ALL BRANCH SUMMARY (Owner Admin only) */}
-                                {user.currentBranch === 'ALL' && user.role === 'admin' && branchFinancials && branchFinancials.length > 0 && ( // REVERTED: admin
+                                {user.currentBranch === 'ALL' && user.role === 'admin' && branchFinancials && branchFinancials.length > 0 && ( 
                                     <div className="bg-white p-4 rounded-xl shadow-lg border border-teal-100 space-y-4">
                                         <h3 className="text-sm font-bold text-teal-700 uppercase tracking-wider flex items-center gap-2"><Icons.TrendingUp size={16}/> All Branch Summary</h3>
                                         <div className="grid grid-cols-2 gap-3 mb-4 border-b pb-3 border-slate-100">
@@ -1925,8 +1932,8 @@
                                             <Icons.LayoutDashboard size={18}/> Live Records ({showMyShift ? 'My Shift' : user.currentBranch})
                                         </h2>
                                         <div className="flex items-center gap-2">
-                                            {/* REVERTED: Show "My Shift" toggle for staff */}
-                                            {user.role === 'staff' && ( // REVERTED: staff
+                                            {/* Show "My Shift" toggle for staff */}
+                                            {user.role === 'staff' && ( 
                                                 <button 
                                                     onClick={() => setShowMyShift(!showMyShift)}
                                                     className={`text-[10px] font-bold ${showMyShift ? 'bg-logo-green-700 text-white' : 'bg-logo-green-50 text-logo-green-700'} px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1 items-center transition-colors`}
@@ -1996,7 +2003,7 @@
                                                                 {t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}
                                                             </button>
                                                         )}
-                                                        {user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>} // REVERTED: admin
+                                                        {user.role==='admin'&&<button onClick={()=>requestDelete(t.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16}/></button>} 
                                                     </div>
                                                 </div>
                                             </div>
@@ -2147,15 +2154,23 @@
                                 <div className="bg-slate-50 p-4 rounded-xl border mb-6"><p className="text-xs text-slate-400 uppercase font-bold">Account</p><p className="font-bold text-logo-green-800 text-lg">{user.name}</p></div>
                                 <form onSubmit={handleUpdateProfile} className="space-y-4">
                                     <input required value={profileData.username} onChange={e=>setProfileData({...profileData, username:e.target.value})} className="w-full p-3 border rounded-lg" placeholder="New Username"/>
-                                    <input type="password" inputMode="numeric" maxLength="4" value={profileData.pin} onChange={e=>setProfileData({...profileData, pin:e.target.value})} className="w-full p-3 border rounded-lg font-mono" placeholder="New PIN (Leave blank to keep old)"/>
+                                    <input 
+                                        type="password" 
+                                        inputMode="numeric" 
+                                        // Removed maxLength=4 here too, validation is handled dynamically
+                                        value={profileData.pin} 
+                                        onChange={e=>setProfileData({...profileData, pin:e.target.value})} 
+                                        className="w-full p-3 border rounded-lg font-mono" 
+                                        placeholder={`New PIN (${user.role === 'admin' ? '6' : '4'} digits. Leave blank to keep old)`}
+                                    />
                                     <button className="w-full bg-logo-green-700 text-white font-bold py-3 rounded-lg">Update Credentials</button>
                                 </form>
                             </div>
                         )}
                         
                         {/* Data List Management View */}
-                        {/* REVERTED: Only visible to admin */}
-                        {view === 'lists' && user.role === 'admin' && ( // REVERTED: admin
+                        {/* Only visible to admin */}
+                        {view === 'lists' && user.role === 'admin' && ( 
                             <ListManagement 
                                 therapists={therapistsList} 
                                 services={servicesList}
@@ -2166,7 +2181,7 @@
                             />
                         )}
 
-                        {view === 'team' && user.role === 'admin' && ( // REVERTED: admin
+                        {view === 'team' && user.role === 'admin' && ( 
                             <div className="space-y-6 fade-in">
                                 <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.Users/> Manage Staff</h2>
                                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -2199,10 +2214,10 @@
                                             <div>
                                                 <h3 className="font-bold flex items-center">
                                                     {u.name} 
-                                                    {u.username === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-logo-green-100 text-logo-green-700 ml-2">OWNER/ADMIN</span>} {/* REVERTED: ADMIN */}
-                                                    {/* REVERTED: Display role names */}
-                                                    {u.username !== 'admin' && u.role === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">ADMIN</span>} {/* REVERTED: ADMIN */}
-                                                    {u.role === 'staff' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ml-2">STAFF</span>} {/* REVERTED: STAFF */}
+                                                    {u.username === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-logo-green-100 text-logo-green-700 ml-2">OWNER/ADMIN</span>} 
+                                                    {/* Display role names */}
+                                                    {u.username !== 'admin' && u.role === 'admin' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 ml-2">ADMIN</span>} 
+                                                    {u.role === 'staff' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ml-2">STAFF</span>} 
                                                     {/* Online Indicator */}
                                                     {isUserOnline(u.lastActive) && (
                                                         <span className="ml-2 flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full border border-green-200 animate-pulse">
@@ -2238,7 +2253,7 @@
                                                 )}
 
                                                 {/* Delete button visible to Admin */}
-                                                {user.role === 'admin' && ( // REVERTED: admin
+                                                {user.role === 'admin' && ( 
                                                     <button 
                                                         onClick={(e)=>{e.stopPropagation(); handleDeleteUser(u.id)}} 
                                                         className="p-1.5 text-slate-300 hover:text-red-500"
@@ -2257,11 +2272,20 @@
                                         <input required placeholder="Name" value={newUser.name} onChange={e=>setNewUser({...newUser, name:e.target.value})} className="w-full p-2 border rounded"/>
                                         <input required placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-2 border rounded"/>
                                         <div className="flex gap-2">
-                                            <input required maxLength="4" placeholder="PIN (4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/>
-                                            {/* REVERTED: Role options */}
+                                            <input 
+                                                required 
+                                                maxLength={newUser.role === 'admin' ? 6 : 4} // Dynamic length
+                                                placeholder={`PIN (${newUser.role === 'admin' ? 6 : 4} digits)`} 
+                                                type="password" 
+                                                inputMode="numeric" 
+                                                value={newUser.pin} 
+                                                onChange={e=>setNewUser({...newUser, pin:e.target.value})} 
+                                                className="w-full p-2 border rounded"
+                                            />
+                                            {/* Role options */}
                                             <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded">
-                                                <option value="staff">Staff</option> {/* REVERTED: staff */}
-                                                <option value="admin">Admin</option> {/* REVERTED: admin */}
+                                                <option value="staff">Staff</option> 
+                                                <option value="admin">Admin</option> 
                                             </select>
                                         </div>
                                         <button className="w-full bg-logo-green-700 text-white py-2 rounded font-bold">Add User</button>
@@ -2270,7 +2294,7 @@
                             </div>
                         )}
 
-                        {view === 'history' && user.role === 'admin' && ( // REVERTED: admin
+                        {view === 'history' && user.role === 'admin' && ( 
                             <div className="space-y-4 fade-in">
                                 <h2 className="text-lg font-bold text-logo-green-900 flex gap-2"><Icons.History/> History</h2>
                                 
@@ -2354,6 +2378,7 @@
                         editUserModal={editUserModal} 
                         setEditUserModal={setEditUserModal} 
                         handleResetPin={handleResetPin}
+                        userRole={user?.role}
                     />
                 </div>
             );
