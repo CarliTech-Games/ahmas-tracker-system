@@ -1475,6 +1475,7 @@
                             const historyColl = fb.db.collection(`${basePath}/history`);
                             const transColl = fb.db.collection(`${basePath}/transactions`);
 
+                            // --- MODIFICATION: INCLUDE DETAILED THERAPIST STATS IN HISTORY ---
                             await historyColl.add({
                                 date: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
                                 timestamp: new Date().toLocaleString(),
@@ -1482,9 +1483,11 @@
                                 timestamp_val: firebase.firestore.FieldValue.serverTimestamp(),
                                 transactions: filteredTransactions,
                                 stats: stats,
+                                therapist_stats: therapistStats, // NEW: Include the detailed stats
                                 branch: user.currentBranch,
                                 closedBy: user.name
                             });
+                            // --- END MODIFICATION ---
 
                             const deletePromises = filteredTransactions.map(t => transColl.doc(t.id).delete());
                             await Promise.all(deletePromises);
@@ -2233,7 +2236,34 @@
                                                     {expandedHistoryId===h.id?<Icons.ChevronUp size={20} className="text-slate-400"/>:<Icons.ChevronDown size={20} className="text-slate-400"/>}
                                                 </div>
                                             </div>
-                                            {expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm">{h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.type==='expense'? t.category : t.clientName} ({t.type === 'expense' ? 'Expense' : t.service})</span><span className={`font-bold ${t.type==='expense'?'text-red-600':'text-logo-green-700'}`}>{formatCurrency(t.amount)}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Desc: {t.notes}</span>}</div>)}</div>}
+                                            {expandedHistoryId===h.id && (
+                                                <div className="bg-slate-50 p-4 border-t text-sm">
+                                                    {/* NEW: Display Therapist Commission Breakdown */}
+                                                    {h.therapist_stats && Object.keys(h.therapist_stats).length > 0 && (
+                                                        <div className="mb-4">
+                                                            <h4 className="text-xs font-bold text-logo-green-700 uppercase mb-2 flex items-center gap-1"><Icons.Trophy size={12}/> Daily Commission Breakdown:</h4>
+                                                            {Object.keys(h.therapist_stats).map(branch => (
+                                                                <div key={branch} className="mb-2 last:mb-0">
+                                                                    <h5 className="text-[10px] font-bold text-slate-500 uppercase px-1">{branch}</h5>
+                                                                    <div className="space-y-1">
+                                                                        {h.therapist_stats[branch].map(s => (
+                                                                            <div key={s.name} className="flex justify-between text-xs border-b border-slate-200 last:border-0 pb-1">
+                                                                                <span className="font-semibold text-slate-700">{s.name} ({s.rate}%)</span>
+                                                                                <span className="font-bold text-teal-600">{formatCurrency(s.commission)}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            <hr className="mt-2"/>
+                                                        </div>
+                                                    )}
+                                                    {/* END NEW: Display Therapist Commission Breakdown */}
+
+                                                    <h4 className="text-xs font-bold text-slate-700 uppercase mb-2 flex items-center gap-1"><Icons.ClipboardList size={12}/> Transaction Log:</h4>
+                                                    {h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.type==='expense'? t.category : t.clientName} ({t.type === 'expense' ? 'Expense' : t.service})</span><span className={`font-bold ${t.type==='expense'?'text-red-600':'text-logo-green-700'}`}>{formatCurrency(t.amount)}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Desc: {t.notes}</span>}</div>)}
+                                                </div>
+                                            )}
                                         </div>
                                     ))
                                 )}
