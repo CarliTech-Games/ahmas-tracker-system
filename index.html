@@ -511,7 +511,7 @@
                                     required
                                     type="password"
                                     inputMode="numeric"
-                                    // Removed maxLength attribute to allow 6 digits in JSX, validation is in handler
+                                    maxLength={requiredLen}
                                     value={editUserModal.newPin}
                                     onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })}
                                     placeholder={`Enter new ${requiredLen}-digit PIN`}
@@ -557,6 +557,9 @@
             
             // NEW: Offline Queue State
             const [offlineQueue, setOfflineQueue] = useState([]);
+            
+            // NEW: Real-time Listener Control State
+            const [isTransactionListenerActive, setIsTransactionListenerActive] = useState(true);
 
             // Master Lists
             const [therapistsList, setTherapistsList] = useState([]);
@@ -578,11 +581,11 @@
             const [loginPin, setLoginPin] = useState('');
             const [loginBranch, setLoginBranch] = useState(''); 
             
-            // REVERTED: Initial role is 'staff'
+            // Initial role is 'staff'
             const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'staff' });
             const [profileData, setProfileData] = useState({ username: '', pin: '' });
             
-            // UPDATED: Added expense-related fields and viewType
+            // Added expense-related fields and viewType
             const [formData, setFormData] = useState({
                 clientName: '', 
                 service: '', 
@@ -603,6 +606,43 @@
 
             const closeModal = () => setModal({ ...modal, isOpen: false });
             const closeEditUserModal = () => setEditUserModal({ isOpen: false, user: null, newPin: '' });
+            
+            // --- Activity Timer for Throttling ---
+            const activityTimerRef = useRef(null);
+            const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+            const resetActivityTimer = () => {
+                if (activityTimerRef.current) {
+                    clearTimeout(activityTimerRef.current);
+                }
+                activityTimerRef.current = setTimeout(() => {
+                    if (isTransactionListenerActive) {
+                        setIsTransactionListenerActive(false);
+                        console.log("Activity Timeout: Pausing real-time listener.");
+                    }
+                }, INACTIVITY_TIMEOUT_MS);
+                
+                if (!isTransactionListenerActive) {
+                    setIsTransactionListenerActive(true);
+                    console.log("Activity Resumed: Restarting real-time listener.");
+                }
+            };
+            
+            // Listen for user activity events
+            useEffect(() => {
+                if (!user || view !== 'dashboard') return;
+
+                const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+                events.forEach(event => window.addEventListener(event, resetActivityTimer));
+                resetActivityTimer(); // Start timer on component mount/view change
+
+                return () => {
+                    if (activityTimerRef.current) {
+                        clearTimeout(activityTimerRef.current);
+                    }
+                    events.forEach(event => window.removeEventListener(event, resetActivityTimer));
+                };
+            }, [user, view]);
 
 
             // --- 1. INITIALIZE FIREBASE ---
@@ -722,7 +762,7 @@
             }, [isOnline, fb, offlineQueue.length]);
 
 
-            // --- 2. DATA SYNC (UPDATED: Lazy Loading History) ---
+            // --- 2. DATA SYNC (Listener Management) ---
             
             useEffect(() => {
                 if (!fb || !fbUser) return;
@@ -730,18 +770,26 @@
                 const basePath = `artifacts/${appId}/public/data`;
                 
                 const getCollection = (name) => db.collection(`${basePath}/${name}`);
+                
+                let unsubTrans = () => {};
+                if (isTransactionListenerActive && view === 'dashboard') {
+                    // Transactions (Active Listener ONLY when active and on dashboard)
+                    unsubTrans = getCollection('transactions')
+                        .onSnapshot((snapshot) => {
+                            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
+                            setTransactions(data);
+                            setDbReady(true);
+                        }, (error) => console.error("Sync Error: Transactions", error));
+                } else if (view !== 'dashboard' && isTransactionListenerActive) {
+                    // Turn off listener if leaving dashboard view, even if active
+                    setIsTransactionListenerActive(false);
+                } else if (!isTransactionListenerActive && view === 'dashboard') {
+                    // If listener is paused due to inactivity, transactions state will be stale.
+                    // We keep the old data for display and wait for reconnection.
+                }
 
-                // Transactions (Small & Critical - Always Load)
-                const unsubTrans = getCollection('transactions')
-                    .onSnapshot((snapshot) => {
-                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        // USE HELPER FOR SORTING
-                        data.sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
-                        setTransactions(data);
-                        setDbReady(true);
-                    }, (error) => console.error("Sync Error: Transactions", error));
-
-                // Users (Small - Always Load)
+                // Users (Always Load - Needed for Login/Team Management)
                 const unsubUsers = getCollection('users')
                     .onSnapshot(async (snapshot) => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -758,11 +806,11 @@
                         for (const u of needsUpdate) {
                             if (u.pin === '8888' || u.pin === '888888') { // Owner/Admin
                                 const hashedPin = await hashPin('888888'); // Use the 6-digit default pin for hashing
-                                await userColl.doc(u.id).update({ pin: hashedPin, role: 'admin' }); // REVERTED: admin
+                                await userColl.doc(u.id).update({ pin: hashedPin, role: 'admin' }); 
                                 shouldWait = true;
                             } else if (u.pin === '1111' || u.pin === '2222') { // Staff
                                 const hashedPin = await hashPin(u.pin);
-                                await userColl.doc(u.id).update({ pin: hashedPin, role: 'staff' }); // REVERTED: staff
+                                await userColl.doc(u.id).update({ pin: hashedPin, role: 'staff' }); 
                                 shouldWait = true;
                             }
                         }
@@ -773,26 +821,23 @@
 
                     }, (error) => console.error("Sync Error: Users", error));
 
-                // Therapists
+                // Master Lists (Always Load)
                 const unsubTherapists = getCollection('therapists')
                     .onSnapshot((snapshot) => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         setTherapistsList(data.sort((a, b) => a.name.localeCompare(b.name)));
                     }, (error) => console.error("Sync Error: Therapists", error));
 
-                // Services
                 const unsubServices = getCollection('services')
                     .onSnapshot((snapshot) => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         setServicesList(data.sort((a, b) => a.name.localeCompare(b.name)));
                     }, (error) => console.error("Sync Error: Services", error));
 
-                // Durations
                 const unsubDurations = getCollection('durations')
                     .onSnapshot((snapshot) => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         
-                        // Sort based on numeric value if possible, else string
                         setDurationsList(data.sort((a, b) => {
                             const valA = parseInt(a.name) || 0;
                             const valB = parseInt(b.name) || 0;
@@ -808,11 +853,11 @@
                     unsubServices();
                     unsubDurations();
                 };
-            }, [fb, fbUser]);
+            }, [fb, fbUser, isTransactionListenerActive, view]); // DEPENDENCY: isTransactionListenerActive now controls transaction sync
+
 
             // --- 2b. LAZY LOAD HISTORY (Only when View is 'history') ---
             useEffect(() => {
-                // If we are not in history view, clear memory and do nothing
                 if (!fb || !fbUser || view !== 'history') {
                     if (history.length > 0) setHistory([]); // Free up memory
                     return;
@@ -831,7 +876,7 @@
                     });
 
                 return () => unsub();
-            }, [fb, fbUser, view]); // Re-run when view changes
+            }, [fb, fbUser, view]); 
 
             // --- 2c. REAL-TIME USER ROLE SYNC ---
             useEffect(() => {
@@ -1732,6 +1777,13 @@
                     setIsGlobalLoading(false);
                 }
             };
+            
+            const handleReconnect = () => {
+                if (!isTransactionListenerActive) {
+                    setIsTransactionListenerActive(true);
+                    resetActivityTimer();
+                }
+            };
 
             // --- RENDER ---
 
@@ -1948,6 +2000,16 @@
                                         </div>
                                     </div>
                                     
+                                    {/* Throttling/Reconnection Alert */}
+                                    {!isTransactionListenerActive && (
+                                        <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 text-sm flex justify-between items-center rounded-r shadow-sm">
+                                            <span><span className="font-bold">Updates Paused:</span> Real-time dashboard synchronization has paused due to inactivity to conserve Firebase reads.</span>
+                                            <button onClick={handleReconnect} className="underline font-bold hover:text-orange-900 ml-2 whitespace-nowrap flex items-center gap-1">
+                                                <Icons.Loader2 size={12} className="animate-spin text-orange-500"/> Reconnect
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {/* Performance Alert */}
                                     {filteredTransactions.length > 50 && (
                                         <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 text-sm flex justify-between items-center rounded-r shadow-sm">
@@ -2157,7 +2219,7 @@
                                     <input 
                                         type="password" 
                                         inputMode="numeric" 
-                                        // Removed maxLength=4 here too, validation is handled dynamically
+                                        maxLength={user.role === 'admin' ? 6 : 4}
                                         value={profileData.pin} 
                                         onChange={e=>setProfileData({...profileData, pin:e.target.value})} 
                                         className="w-full p-3 border rounded-lg font-mono" 
