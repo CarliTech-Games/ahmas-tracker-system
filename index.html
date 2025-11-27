@@ -1483,17 +1483,22 @@
             };
 
             const requestEndDay = () => {
-                if (user?.role !== 'admin') {
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only Admin can close the day.', onConfirm: closeModal, confirmColor: 'red' });
+                // MODIFICATION: Check if user has permission (Admin OR Staff)
+                if (user?.currentBranch === 'ALL' || (user?.role !== 'admin' && user?.role !== 'staff')) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'Only authorized Staff/Admin can close the shift/day.', onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
+                
+                // If user is Admin but is logged into a specific branch, they can perform End Day
+                // If user is Staff (role='staff'), they can perform End Day.
+                
                 if (filteredTransactions.length === 0) {
                     setModal({ isOpen: true, type: 'alert', title: 'No Data', message: 'Nothing to save for this branch.', onConfirm: closeModal, confirmColor: 'logo-green' });
                     return;
                 }
 
                 setModal({
-                    isOpen: true, type: 'confirm', title: 'Archive & Start New Day?', message: `This will MOVE all active bookings, sales, and expenses to the History tab and clear the dashboard for tomorrow. You can view and download this report in the History tab anytime.`, confirmColor: 'logo-green',
+                    isOpen: true, type: 'confirm', title: 'Archive & Start New Shift?', message: `This will permanently save and clear all active records for ${user.currentBranch}. The report will be stored in History.`, confirmColor: 'logo-green',
                     onConfirm: async () => {
                         closeModal();
                         setIsGlobalLoading(true);
@@ -1502,7 +1507,6 @@
                             const historyColl = fb.db.collection(`${basePath}/history`);
                             const transColl = fb.db.collection(`${basePath}/transactions`);
 
-                            // --- MODIFICATION: INCLUDE DETAILED THERAPIST STATS IN HISTORY ---
                             await historyColl.add({
                                 date: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
                                 timestamp: new Date().toLocaleString(),
@@ -1514,12 +1518,13 @@
                                 branch: user.currentBranch,
                                 closedBy: user.name
                             });
-                            // --- END MODIFICATION ---
 
                             const deletePromises = filteredTransactions.map(t => transColl.doc(t.id).delete());
                             await Promise.all(deletePromises);
 
-                            setView('history');
+                            setView('dashboard'); // Stay on dashboard after successful shift close
+                            setModal({ isOpen: true, type: 'alert', title: 'Shift Closed!', message: `Shift transactions successfully archived for ${user.currentBranch}.`, confirmColor: 'logo-green', onConfirm: closeModal });
+
                         } catch (err) {
                             setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to end day. Data preserved.', confirmColor: 'red', onConfirm: closeModal });
                         } finally {
@@ -1903,7 +1908,8 @@
                                                     <Icons.User size={12}/> {showMyShift ? 'Showing My Shift' : 'Show Only Mine'}
                                                 </button>
                                             )}
-                                            {user.role === 'admin' && (
+                                            {/* MODIFICATION: The 'End Day' button is now visible if the user is NOT the 'ALL BRANCHES' owner view, allowing staff and specific-branch admins to archive. */}
+                                            {user.currentBranch !== 'ALL' && (
                                                 <button onClick={requestEndDay} className="text-[10px] font-bold text-logo-green-700 bg-logo-green-50 px-3 py-1.5 rounded-full border border-logo-green-200 flex gap-1"><Icons.Archive size={12}/> End Day</button>
                                             )}
                                         </div>
@@ -1913,7 +1919,7 @@
                                     {filteredTransactions.length > 50 && (
                                         <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 text-sm flex justify-between items-center rounded-r shadow-sm">
                                             <span><span className="font-bold">Performance Alert:</span> You have {filteredTransactions.length} active records. End the day to archive and speed up the app.</span>
-                                            {user.role === 'admin' && <button onClick={requestEndDay} className="underline font-bold hover:text-orange-900 ml-2 whitespace-nowrap">End Day Now</button>}
+                                            {user.currentBranch !== 'ALL' && <button onClick={requestEndDay} className="underline font-bold hover:text-orange-900 ml-2 whitespace-nowrap">End Day Now</button>}
                                         </div>
                                     )}
 
