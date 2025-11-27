@@ -14,6 +14,7 @@
 
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- Using Firebase Compatibility libraries for broader support -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -25,13 +26,13 @@
                 extend: {
                     colors: {
                         'logo-green': {
-                            50: '#E6FFE6',      // Very light background
-                            100: '#CCFFCC',     // Light background
-                            500: '#00B300',     // Medium
-                            600: '#009900',     // Primary Button Hover
-                            700: '#008000',     // Base Logo Green / Primary
-                            800: '#006600',     // Darker text/header
-                            900: '#004C00',     // Deepest text
+                            50: '#E6FFE6',       // Very light background
+                            100: '#CCFFCC',       // Light background
+                            500: '#00B300',       // Medium
+                            600: '#009900',       // Primary Button Hover
+                            700: '#008000',       // Base Logo Green / Primary
+                            800: '#006600',       // Darker text/header
+                            900: '#004C00',       // Deepest text
                         },
                         'teal': {
                             600: '#008080', // Keep some teal accent for contrast
@@ -78,24 +79,30 @@
             'AS Fortuna'
         ];
         
-        const BOOKING_TYPES = [ 
-            'In-Spa',
-            'Home Service'
-        ];
-        
-        // --- FIREBASE CONFIGURATION ---
-        const MANUAL_FIREBASE_CONFIG = {
-            apiKey: "AIzaSyAKXcZwKtFBRFvGbOKd0UnQrLuOLt7wV9M",
-            authDomain: "ahmas-tracker.firebaseapp.com",
-            projectId: "ahmas-tracker",
-            storageBucket: "ahmas-tracker.firebasestorage.app",
-            messagingSenderId: "6650730194",
-            appId: "1:6650730194:web:eedf9c5bcb25cfe12ebf0b",
-            measurementId: "G-XW2GZJXN08"
+        // --- FIREBASE CONFIGURATION SETUP (Using mandatory global variables) ---
+        const FALLBACK_FIREBASE_CONFIG = {
+            apiKey: "FALLBACK_API_KEY", // Placeholder, should be replaced by runtime environment
+            authDomain: "FALLBACK_DOMAIN",
+            projectId: "FALLBACK_PROJECT",
+            storageBucket: "FALLBACK_BUCKET",
+            messagingSenderId: "FALLBACK_SENDER",
+            appId: "FALLBACK_APPID"
         };
         
-        const firebaseConfig = MANUAL_FIREBASE_CONFIG; 
+        const getFirebaseConfig = () => {
+            try {
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    return JSON.parse(__firebase_config);
+                }
+            } catch (e) {
+                console.error("Failed to parse __firebase_config environment variable:", e);
+            }
+            return FALLBACK_FIREBASE_CONFIG;
+        };
+
+        const firebaseConfig = getFirebaseConfig();
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const currentAppId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId || 'default-app-id';
 
 
         // --- ICON COMPONENT ---
@@ -153,8 +160,7 @@
             ClipboardList: (p) => <Icon name="clipboard-list" {...p} />,
             MinusCircle: (p) => <Icon name="minus-circle" {...p} />,
             Wallet: (p) => <Icon name="wallet" {...p} />,
-            TrendingUp: (p) => <Icon name="trending-up" {...p} />,
-            Car: (p) => <Icon name="car" {...p} />, 
+            TrendingUp: (p) => <Icon name="trending-up" {...p} /> 
         };
 
         // --- SECURITY HELPER: Hashing Function ---
@@ -176,7 +182,7 @@
         // --- SECURITY HELPER: Timestamp Normalizer ---
         // Handles both legacy Date.now() numbers and Firestore Timestamp objects
         const getMillis = (ts) => {
-            if (!ts) return Date.now(); // FIX: Treat pending/null as "now" so it appears at the top
+            if (!ts) return Date.now(); // Treat pending/null as "now" so it appears at the top
             if (typeof ts === 'number') return ts; // Legacy or client-side number
             if (typeof ts.toMillis === 'function') return ts.toMillis(); // Firestore Timestamp object
             if (ts.seconds) return ts.seconds * 1000; // Raw object fallback
@@ -193,220 +199,348 @@
             </div>
         );
 
-        // --- Edit Booking Modal Component (NEW) ---
-        const EditBookingModal = ({ data, user, therapistsList, servicesList, durationsList, onUpdate, onClose, formatCurrency, calculatePrice }) => {
-            if (!data) return null;
+
+        // --- List Management Component (Admin Only) ---
+        const ListManagement = ({ therapists, services, durations, onAdd, onDelete, onEdit }) => {
+            const [activeTab, setActiveTab] = useState('therapist'); 
             
-            // Local state for the editable fields
-            const [editData, setEditData] = useState({
-                ...data,
-                // Ensure number fields are treated as strings for input value consistency
-                amount: String(data.amount || ''), 
-                additionalCharge: String(data.additionalCharge || ''),
-                // Ensure date is valid for Date input type
-                // Note: We use t.time but need to handle t.timestamp for date context later if full scheduling is built.
-            });
-            const [localError, setLocalError] = useState('');
+            // Add State
+            const [newItemName, setNewItemName] = useState('');
+            const [newItemPrices, setNewItemPrices] = useState({}); 
+            const [newItemCommission, setNewItemCommission] = useState(''); 
+            
+            // Edit State
+            const [editingId, setEditingId] = useState(null);
+            const [editName, setEditName] = useState('');
+            const [editPrices, setEditPrices] = useState({});
+            const [editCommission, setEditCommission] = useState(''); 
 
-            // Helper to calculate the total amount
-            const totalCharged = useMemo(() => {
-                return Number(editData.amount || 0) + Number(editData.additionalCharge || 0);
-            }, [editData.amount, editData.additionalCharge]);
+            const [modal, setModal] = useState({ isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red' });
+            const closeModal = () => setModal({ ...modal, isOpen: false });
+            
+            const isServiceAddDisabled = activeTab === 'service' && durations.length === 0;
 
-            const handleUpdate = (e) => {
+            const handleFormSubmit = (e) => {
                 e.preventDefault();
-                setLocalError('');
-
-                if (editData.type === 'expense') {
-                    if (!editData.amount || !editData.category || !editData.notes) {
-                         setLocalError('Amount, Category, and Description required for expense.');
-                         return;
-                    }
-                } else {
-                    if (!editData.clientName || !editData.amount || !editData.service || !editData.therapist || !editData.bookingType) { 
-                        setLocalError('Client Name, Booking Type, Service, Therapist, and Price required.');
-                        return;
-                    }
+                let extraData = null;
+                if (activeTab === 'service') {
+                    if (durations.length === 0) return; // Guard clause
+                    extraData = newItemPrices;
+                } else if (activeTab === 'therapist') {
+                    extraData = { commissionRate: parseFloat(newItemCommission) || 0 };
                 }
 
-                // If amount or additionalCharge are modified, we need to send the base amount.
-                // The main business logic is that `amount` holds the service price (or negative expense amount).
-                const baseAmount = editData.type === 'expense' ? 
-                                    -Math.abs(parseFloat(editData.amount)) : 
-                                    Math.abs(parseFloat(editData.amount));
+                onAdd(activeTab, newItemName, extraData);
+                setNewItemName('');
+                setNewItemPrices({});
+                setNewItemCommission(''); 
+            };
+            
+            const startEdit = (item) => {
+                setEditingId(item.id);
+                setEditName(item.name);
+                setEditPrices(item.prices || {});
+                setEditCommission(item.commissionRate !== undefined ? String(item.commissionRate) : ''); 
+            };
+
+            const cancelEdit = () => {
+                setEditingId(null);
+                setEditName('');
+                setEditPrices({});
+                setEditCommission('');
+            };
+
+            const saveEdit = () => {
+                const updatedData = { name: editName.trim() };
+                if (activeTab === 'service') {
+                    updatedData.prices = editPrices;
+                } else if (activeTab === 'therapist') { 
+                    updatedData.commissionRate = parseFloat(editCommission) || 0;
+                }
+                onEdit(activeTab, editingId, updatedData);
+                setEditingId(null);
+            };
+
+            const handlePriceChange = (durationName, val, isEdit = false) => {
+                const setter = isEdit ? setEditPrices : setNewItemPrices;
+                const current = isEdit ? editPrices : newItemPrices;
                 
-                const additionalCharge = editData.type === 'expense' ? 
-                                         0 : 
-                                         parseFloat(editData.additionalCharge) || 0;
-
-                const updatedPayload = {
-                    ...editData,
-                    amount: baseAmount,
-                    additionalCharge: additionalCharge,
-                    status: editData.status,
-                    notes: editData.notes.trim()
-                };
-
-                onUpdate(data.id, updatedPayload);
+                if (!val) {
+                    const copy = { ...current };
+                    delete copy[durationName];
+                    setter(copy);
+                } else {
+                    setter({ ...current, [durationName]: parseFloat(val) });
+                }
             };
 
-            const handleServiceChange = (serviceName) => {
-                const newPrice = calculatePrice(serviceName, editData.duration);
-                setEditData(prev => ({
-                    ...prev,
-                    service: serviceName,
-                    amount: String(newPrice),
-                }));
-            };
+            let currentList = [];
+            let placeholderText = "";
+            let icon = null;
 
-            const handleDurationChange = (durationName) => {
-                const newPrice = calculatePrice(editData.service, durationName);
-                setEditData(prev => ({
-                    ...prev,
-                    duration: durationName,
-                    amount: String(newPrice),
-                }));
-            };
-
-            // Non-expense transaction editing form
-            const renderBookingFields = () => (
-                <>
-                    <select required value={editData.bookingType} onChange={e=>setEditData({...editData, bookingType:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
-                        <option value="" disabled>Select Booking Type*</option>
-                        {BOOKING_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
-                    </select>
-
-                    <input required placeholder="Client Name*" value={editData.clientName} onChange={e=>setEditData({...editData, clientName:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
-                    
-                    <div className="space-y-4">
-                        <select required value={editData.service} onChange={e=>handleServiceChange(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
-                            <option value="" disabled>Select Service*</option>
-                            {servicesList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </select>
-                        
-                        <select value={editData.duration} onChange={e=>handleDurationChange(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
-                            <option value="" disabled>Select Duration</option>
-                            {durationsList.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                        </select>
-
-                        <select required value={editData.therapist} onChange={e=>setEditData({...editData, therapist:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
-                            <option value="" disabled>Select Therapist*</option>
-                            {therapistsList.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                        </select>
-                    </div>
-                    
-                    <textarea 
-                        placeholder="Service Notes" 
-                        rows="3"
-                        value={editData.notes} 
-                        onChange={e=>setEditData({...editData, notes:e.target.value})} 
-                        className="w-full p-3 border rounded-xl bg-slate-50 resize-none"
-                    />
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <input required 
-                            type="number" step="0.01" 
-                            placeholder="Base Service Price (P)*" 
-                            value={editData.amount} 
-                            onChange={e=>setEditData({...editData, amount:e.target.value})} 
-                            className="w-full p-3 border rounded-xl bg-slate-50"
-                        />
-                        <input 
-                            type="number" step="0.01" 
-                            placeholder={editData.bookingType === 'Home Service' ? 'Transport Fee / Extra Charge (P)' : 'Additional Charge / Tip (P)'}
-                            value={editData.additionalCharge} 
-                            onChange={e=>setEditData({...editData, additionalCharge:e.target.value})} 
-                            className="w-full p-3 border rounded-xl bg-slate-50"
-                        />
-                    </div>
-                    <input type="time" value={editData.time} onChange={e=>setEditData({...editData, time:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
-
-                    <div className="p-3 bg-slate-100 rounded-lg text-sm font-bold text-slate-700">
-                        TOTAL CHARGED: {formatCurrency(totalCharged)}
-                    </div>
-                    
-                    {/* Status Toggle (Admin only for Completed, Staff/Admin for Pending) */}
-                    {(user.role === 'admin' || editData.status === 'pending') && (
-                        <div className="flex justify-between items-center pt-2">
-                            <span className="text-sm font-semibold text-slate-700">Status:</span>
-                            <button 
-                                type="button"
-                                onClick={() => setEditData(prev => ({ ...prev, status: prev.status === 'pending' ? 'completed' : 'pending' }))}
-                                className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                                    editData.status === 'completed' 
-                                    ? 'bg-logo-green-600 text-white' 
-                                    : 'bg-orange-400 text-white'
-                                }`}
-                            >
-                                {editData.status === 'completed' ? 'Completed/Paid' : 'Pending'}
-                            </button>
-                        </div>
-                    )}
-                </>
-            );
-
-            // Expense transaction editing form
-            const renderExpenseFields = () => (
-                <>
-                    <div className="flex gap-2">
-                        <select required value={editData.category} onChange={e=>setEditData({...editData, category:e.target.value})} className="flex-1 p-3 border rounded-xl bg-slate-50 appearance-none">
-                            <option value="" disabled>Select Category*</option>
-                            <option value="Supplies">Supplies (Oil, Linens, etc.)</option>
-                            <option value="Maintenance">Maintenance/Repair</option>
-                            <option value="Utilities">Utilities Payment (Partial)</option>
-                            <option value="Food/Beverage">Staff Food/Beverage</option>
-                            <option value="Other">Other Expense</option>
-                        </select>
-                        <input type="time" value={editData.time} onChange={e=>setEditData({...editData, time:e.target.value})} className="w-[120px] p-3 border rounded-xl bg-slate-50"/>
-                    </div>
-                    
-                    <input required 
-                        type="number" step="0.01" 
-                        min="0.01"
-                        placeholder="Amount Spent (P)*" 
-                        value={editData.amount} 
-                        onChange={e=>setEditData({...editData, amount:e.target.value})} 
-                        className="w-full p-3 border rounded-xl bg-slate-50 border-red-300 font-bold"
-                    />
-                    
-                    <textarea 
-                        required
-                        placeholder="Description / Reason" 
-                        rows="3"
-                        value={editData.notes} 
-                        onChange={e=>setEditData({...editData, notes:e.target.value})} 
-                        className="w-full p-3 border rounded-xl bg-slate-50 resize-none"
-                    />
-                </>
-            );
+            if (activeTab === 'therapist') {
+                currentList = therapists;
+                placeholderText = "Enter Therapist Name";
+                icon = <Icons.Users size={18} />;
+            } else if (activeTab === 'service') {
+                currentList = services;
+                placeholderText = "Enter Service Name (e.g. Swedish)";
+                icon = <Icons.Tag size={18} />;
+            } else {
+                currentList = durations;
+                placeholderText = "Enter Duration (e.g. 60 Mins)";
+                icon = <Icons.Hourglass size={18} />;
+            }
 
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 fade-in">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <h3 className={`text-xl font-bold mb-4 flex items-center gap-2 ${editData.type === 'expense' ? 'text-red-700' : 'text-logo-green-800'}`}>
-                            {editData.type === 'expense' ? <Icons.MinusCircle size={24}/> : <Icons.Pencil size={24}/>} 
-                            Edit {editData.type.charAt(0).toUpperCase() + editData.type.slice(1)}
-                            <span className="text-sm font-normal text-slate-400 ml-auto">ID: {data.id.slice(-6)}</span>
-                        </h3>
-                        
-                        {localError && <div className="p-3 mb-4 text-sm bg-red-100 text-red-700 rounded-lg">{localError}</div>}
+                <div className="space-y-6 fade-in">
+                    <h2 className="text-lg font-bold text-logo-green-800 flex gap-2 items-center"><Icons.ShieldCheck size={18} className="text-logo-green-700"/> Master Data Lists</h2>
+                    
+                    {/* Tabs */}
+                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                        <button onClick={() => setActiveTab('therapist')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='therapist' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Users size={14}/> Therapists
+                        </button>
+                        <button onClick={() => setActiveTab('duration')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='duration' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Clock size={14}/> Minutes
+                        </button>
+                        <button onClick={() => setActiveTab('service')} className={`flex-1 py-2 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${activeTab==='service' ? 'bg-white shadow-sm text-logo-green-700' : 'text-slate-500'}`}>
+                            <Icons.Sparkles size={14}/> Services
+                        </button>
+                    </div>
 
-                        <form onSubmit={handleUpdate} className="space-y-4">
-                            {editData.type === 'expense' ? renderExpenseFields() : renderBookingFields()}
+                    {/* Add New Item */}
+                    <div className="bg-white rounded-xl shadow-sm border border-logo-green-100 p-6">
+                        <h3 className="font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wide text-slate-500"><Icons.Plus size={16}/> Add New {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
+                        <form onSubmit={handleFormSubmit} className="flex flex-col gap-3">
+                            <div className="flex gap-2">
+                                <input 
+                                    required 
+                                    placeholder={placeholderText} 
+                                    value={newItemName} 
+                                    onChange={e => setNewItemName(e.target.value)} 
+                                    className="flex-1 p-3 border rounded-lg bg-slate-50 focus:ring-2 focus:ring-logo-green-500 outline-none"
+                                />
+                            </div>
+                            
+                            {/* Dynamic Price Inputs for Services */}
+                            {activeTab === 'service' && (
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                    <p className="text-xs font-bold text-slate-500 mb-2 uppercase">Set Prices per Duration (Optional)</p>
+                                    {durations.length === 0 && <p className="text-xs text-red-400 italic">Add items to "Minutes" tab first to set prices.</p>}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {durations.map(d => (
+                                            <div key={d.id} className="flex items-center gap-2 bg-white p-2 border rounded">
+                                                <span className="text-xs font-bold text-slate-600 whitespace-nowrap w-16">{d.name}:</span>
+                                                <input 
+                                                    type="number" 
+                                                    placeholder="Price"
+                                                    className="w-full text-sm outline-none"
+                                                    value={newItemPrices[d.name] || ''}
+                                                    onChange={e => handlePriceChange(d.name, e.target.value, false)}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                             {/* Commission Rate Input for Therapists */}
+                             {activeTab === 'therapist' && (
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                    <label className="text-xs font-bold text-slate-500 mb-2 uppercase block">Commission Rate (%)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.1"
+                                        placeholder="e.g., 30 for 30%"
+                                        className="w-full p-2 border rounded-lg text-sm outline-none"
+                                        value={newItemCommission}
+                                        onChange={e => setNewItemCommission(e.target.value)}
+                                    />
+                                </div>
+                            )}
+
+                            <button 
+                                type="submit" 
+                                disabled={isServiceAddDisabled} // Disable if no durations for service
+                                className={`w-full text-white p-3 rounded-lg font-bold transition shadow-sm ${
+                                    isServiceAddDisabled
+                                        ? 'bg-slate-400 cursor-not-allowed'
+                                        : 'bg-logo-green-600 hover:bg-logo-green-700'
+                                }`}
+                            >
+                                Add to List
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* Current List */}
+                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                        <div className="p-4 bg-logo-green-50 font-bold text-logo-green-800 text-sm border-b border-logo-green-100 flex justify-between items-center">
+                            <span>Current {activeTab === 'duration' ? 'Durations' : activeTab + 's'} ({currentList.length})</span>
+                            {icon}
+                        </div>
+                        
+                        <div className="max-h-[400px] overflow-y-auto">
+                            {currentList.length === 0 ? (
+                                <p className="text-center text-slate-400 p-6 italic">No items found.</p>
+                            ) : (
+                                currentList.map(item => (
+                                    <div key={item.id} className="p-4 border-b flex flex-col gap-2 last:border-b-0 hover:bg-slate-50">
+                                        <div className="flex justify-between items-center w-full">
+                                            {editingId === item.id ? (
+                                                // Edit Mode Header
+                                                <input 
+                                                    value={editName}
+                                                    onChange={e => setEditName(e.target.value)}
+                                                    className="flex-1 p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-logo-green-500 mr-2"
+                                                />
+                                            ) : (
+                                                // View Mode Header
+                                                <span className="text-slate-700 font-medium">{item.name}</span>
+                                            )}
+                                            
+                                            {/* Actions */}
+                                            <div className="flex gap-1">
+                                                {editingId === item.id ? (
+                                                    <>
+                                                        <button onClick={saveEdit} className="text-logo-green-600 hover:bg-logo-green-50 p-2 rounded transition"><Icons.CheckCircle2 size={18}/></button>
+                                                        <button onClick={cancelEdit} className="text-slate-400 hover:bg-slate-100 p-2 rounded transition"><Icons.X size={18}/></button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => startEdit(item)} className="text-slate-300 hover:text-blue-500 p-2 rounded hover:bg-blue-50 transition" title="Edit Item">
+                                                            <Icons.Pencil size={16} />
+                                                        </button>
+                                                        <button type="button" onClick={() => onDelete(activeTab, item.id, item.name)} className="text-slate-300 hover:text-red-500 p-2 rounded hover:bg-red-50 transition" title="Delete Item">
+                                                            <Icons.Trash2 size={16}/>
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Service Pricing Details (View & Edit) */}
+                                        {activeTab === 'service' && (
+                                            <div className="text-xs text-slate-500 w-full">
+                                                {editingId === item.id ? (
+                                                    <div className="grid grid-cols-2 gap-2 mt-2 bg-slate-100 p-2 rounded">
+                                                        {durations.map(d => (
+                                                            <div key={d.id} className="flex items-center gap-2">
+                                                                <span className="font-bold w-14">{d.name}:</span>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="w-full p-1 border rounded text-xs"
+                                                                    placeholder="0"
+                                                                    value={editPrices[d.name] || ''}
+                                                                    onChange={e => handlePriceChange(d.name, e.target.value, true)}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                        {item.prices && Object.keys(item.prices).length > 0 ? (
+                                                            Object.entries(item.prices).map(([dur, price]) => (
+                                                                <span key={dur} className="bg-logo-green-50 text-logo-green-700 px-2 py-0.5 rounded border border-logo-green-100">
+                                                                    {dur}: <span className="font-bold">P{price}</span>
+                                                                </span>
+                                                            ))
+                                                        ) : (
+                                                            <span className="italic text-slate-300">No specific prices set</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        
+                                        {/* Therapist Commission Details (View & Edit) */}
+                                        {activeTab === 'therapist' && (
+                                            <div className="text-xs text-slate-500 w-full">
+                                                {editingId === item.id ? (
+                                                    <div className="mt-2 bg-slate-100 p-2 rounded flex items-center gap-2">
+                                                        <span className="font-bold w-20">Rate (%):</span>
+                                                        <input 
+                                                            type="number" 
+                                                            min="0"
+                                                            max="100"
+                                                            step="0.1"
+                                                            className="w-full p-1 border rounded text-xs"
+                                                            placeholder="0"
+                                                            value={editCommission}
+                                                            onChange={e => setEditCommission(e.target.value)}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                        <span className="bg-teal-50 text-teal-700 px-2 py-0.5 rounded border border-teal-100 font-bold">
+                                                            Commission: {item.commissionRate !== undefined ? `${item.commissionRate}%` : 'N/A'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                     {modal.isOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60"><div className="bg-white rounded-xl p-6 max-w-sm"><h3 className="font-bold mb-2">{modal.title}</h3><p className="mb-4 text-sm">{modal.message}</p><div className="flex gap-2 justify-end">{modal.type==='confirm'&&<button onClick={closeModal} className="px-4 py-2 text-slate-500">Cancel</button>}<button onClick={modal.onConfirm||closeModal} className={`px-4 py-2 rounded text-white ${modal.confirmColor==='red'?'bg-red-500':'bg-logo-green-600'}`}>Okay</button></div></div></div>}
+                </div>
+            );
+        };
+
+        // --- Admin Reset User Modal ---
+        const AdminResetUserModal = ({ editUserModal, setEditUserModal, handleResetPin }) => {
+            if (!editUserModal.isOpen || !editUserModal.user) return null;
+
+            const user = editUserModal.user;
+            
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 fade-in">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-sm">
+                        <h3 className="text-xl font-bold text-logo-green-800 mb-4 flex items-center gap-2">
+                            <Icons.UserCog size={24}/> Reset Staff Credentials
+                        </h3>
+
+                        <div className="bg-slate-50 p-4 rounded-lg mb-4">
+                            <p className="text-xs text-slate-500 uppercase font-bold">Staff Name:</p>
+                            <p className="font-bold text-slate-800 text-lg mb-2">{user.name}</p>
+
+                            <p className="text-xs text-slate-500 uppercase font-bold">Username:</p>
+                            <p className="font-mono text-logo-green-700 text-sm">@{user.username}</p>
+                        </div>
+
+                        <form onSubmit={handleResetPin} className="space-y-4">
+                            <label className="block">
+                                <span className="text-sm font-semibold text-slate-700 block mb-1">Set New PIN (4 Digits)</span>
+                                <input
+                                    required
+                                    type="password"
+                                    inputMode="numeric"
+                                    maxLength="4"
+                                    value={editUserModal.newPin}
+                                    onChange={(e) => setEditUserModal({ ...editUserModal, newPin: e.target.value })}
+                                    placeholder="Enter new 4-digit PIN"
+                                    className="w-full p-3 border rounded-lg font-mono focus:ring-2 focus:ring-logo-green-500"
+                                />
+                            </label>
 
                             <div className="flex justify-end gap-2 pt-2">
                                 <button 
                                     type="button"
-                                    onClick={onClose} 
+                                    onClick={() => setEditUserModal({ isOpen: false, user: null, newPin: '' })} 
                                     className="px-4 py-2 text-slate-500 rounded hover:bg-slate-100"
                                 >
                                     Cancel
                                 </button>
                                 <button 
                                     type="submit" 
-                                    className={`px-4 py-2 rounded text-white font-bold transition-colors ${editData.type === 'expense' ? 'bg-red-600 hover:bg-red-700' : 'bg-logo-green-600 hover:bg-logo-green-700'}`}
+                                    className="px-4 py-2 rounded text-white bg-logo-green-600 hover:bg-logo-green-700 font-bold"
                                 >
-                                    Save Changes
+                                    Reset PIN
                                 </button>
                             </div>
                         </form>
@@ -423,13 +557,14 @@
             const [isOnline, setIsOnline] = useState(navigator.onLine);
             const [dbReady, setDbReady] = useState(false);
             const [configError, setConfigError] = useState(null); 
-            const [isGlobalLoading, setIsGlobalLoading] = useState(false); 
+            const [isGlobalLoading, setIsGlobalLoading] = useState(false); // NEW: Global Loading State
 
             const [user, setUser] = useState(null);
             const [users, setUsers] = useState([]);
             const [transactions, setTransactions] = useState([]);
             const [history, setHistory] = useState([]);
             
+            // NEW: Offline Queue State
             const [offlineQueue, setOfflineQueue] = useState([]);
 
             // Master Lists
@@ -440,6 +575,7 @@
             const [view, setView] = useState('dashboard');
             const [expandedHistoryId, setExpandedHistoryId] = useState(null);
             
+            // Staff Accountability State
             const [showMyShift, setShowMyShift] = useState(false);
 
             // History Filtering State
@@ -454,9 +590,7 @@
             const [newUser, setNewUser] = useState({ name: '', username: '', pin: '', role: 'staff' });
             const [profileData, setProfileData] = useState({ username: '', pin: '' });
             
-            // ⬅️ EDIT STATE MANAGEMENT
-            const [editTransactionData, setEditTransactionData] = useState(null); 
-
+            // UPDATED: Added expense-related fields and viewType
             const [formData, setFormData] = useState({
                 clientName: '', 
                 service: '', 
@@ -464,12 +598,10 @@
                 amount: '', 
                 duration: '', 
                 type: 'booking', // booking, sale, expense
-                bookingType: BOOKING_TYPES[0], 
-                additionalCharge: '', 
                 time: new Date().toTimeString().slice(0, 5),
                 targetBranch: '',
                 notes: '',
-                category: '' 
+                category: '' // Used for Expense reason
             });
             const [modal, setModal] = useState({
                 isOpen: false, type: 'confirm', title: '', message: '', onConfirm: null, confirmColor: 'red'
@@ -505,9 +637,9 @@
                 }
 
                 const initFirebase = async () => {
-                    if (!firebaseConfig || !firebaseConfig.projectId) {
-                        setConfigError("Firebase configuration is incomplete. Please check the firebaseConfig object.");
-                        return;
+                    if (!firebaseConfig || !firebaseConfig.projectId || firebaseConfig.projectId === 'FALLBACK_PROJECT') {
+                         setConfigError("Firebase configuration is missing. Please ensure __firebase_config environment variable is set or review Fallback config.");
+                         return;
                     }
                     
                     try {
@@ -517,8 +649,8 @@
                         
                         const auth = firebase.auth();
                         const db = firebase.firestore();
-                        const currentAppId = firebaseConfig.projectId || 'default-app-id';
 
+                        // Sign in using the correct token logic
                         if (initialAuthToken) {
                             await auth.signInWithCustomToken(initialAuthToken);
                         } else {
@@ -621,9 +753,6 @@
                         setDbReady(true);
                     }, (error) => console.error("Sync Error: Transactions", error));
 
-                // History (Removed from Global Sync for Scalability)
-                // History is now loaded lazily in a separate useEffect below.
-
                 // Users (Small - Always Load)
                 const unsubUsers = getCollection('users')
                     .onSnapshot(async (snapshot) => {
@@ -635,8 +764,8 @@
                             return; 
                         }
 
-                        // Check hash updates
-                        const needsUpdate = data.filter(u => u.username === 'admin' || u.username === 'morning' || u.username === 'night');
+                        // Check hash updates (One-time migration for default users for safety)
+                        const needsUpdate = data.filter(u => (u.username === 'admin' && u.pin.length < 20) || (u.username === 'morning' && u.pin.length < 20) || (u.username === 'night' && u.pin.length < 20));
                         let shouldWait = false;
                         for (const u of needsUpdate) {
                             if (u.pin === '8888' || u.pin === '1111' || u.pin === '2222') {
@@ -682,7 +811,6 @@
 
                 return () => { 
                     unsubTrans(); 
-                    // unsubHistory(); // Removed
                     unsubUsers(); 
                     unsubTherapists(); 
                     unsubServices();
@@ -691,7 +819,6 @@
             }, [fb, fbUser]);
 
             // --- 2b. LAZY LOAD HISTORY (Only when View is 'history') ---
-            // This prevents the app from crashing on load by avoiding fetching the massive history collection unnecessarily.
             useEffect(() => {
                 // If we are not in history view, clear memory and do nothing
                 if (!fb || !fbUser || view !== 'history') {
@@ -702,7 +829,6 @@
                 const { db, appId } = fb;
                 const basePath = `artifacts/${appId}/public/data`;
                 
-                // No complex queries used here to maintain stability, but we now control *when* it loads.
                 const unsub = db.collection(`${basePath}/history`)
                     .onSnapshot((snapshot) => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -716,7 +842,6 @@
             }, [fb, fbUser, view]); // Re-run when view changes
 
             // --- 2c. REAL-TIME USER ROLE SYNC ---
-            // Ensure that if the Admin changes my role while I'm logged in, I see the changes immediately.
             useEffect(() => {
                 if (user && users.length > 0) {
                     const freshData = users.find(u => u.id === user.id);
@@ -826,23 +951,15 @@
 
             const stats = useMemo(() => {
                 const data = filteredTransactions;
+                const salesRevenue = data.filter(t => (t.status === 'completed' || t.status === 'pending') && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
+                const completedRevenue = data.filter(t => t.status === 'completed' && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 
-                // Revenue is calculated only from completed sales/bookings (not expenses)
-                const completedRevenue = data.filter(t => t.status === 'completed' && t.type !== 'expense').reduce((acc, curr) => {
-                    // Sum the base amount AND any additional charges recorded
-                    return acc + Number(curr.amount) + Number(curr.additionalCharge || 0);
-                }, 0);
-                
-                // Calculate total expenses (which are stored as negative numbers)
+                // Calculate total expenses
                 const totalExpenses = data.filter(t => t.type === 'expense').reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
                 
-                // Pending value is calculated from pending bookings (base amount + additional charge)
-                const pendingValue = data.filter(t => t.status === 'pending' && t.type !== 'expense').reduce((acc, curr) => {
-                     return acc + Number(curr.amount) + Number(curr.additionalCharge || 0);
-                }, 0);
-                
+                const pendingValue = data.filter(t => t.status === 'pending' && t.type !== 'expense').reduce((acc, curr) => acc + Number(curr.amount), 0);
                 const totalBookings = data.filter(t => t.type === 'booking').length;
-                const completedSales = data.filter(t => t.status === 'completed' && t.type !== 'expense').length;
+                const completedSales = data.filter(t => t.status === 'completed').length;
                 
                 // Calculate Net Cash
                 const netCash = completedRevenue - totalExpenses;
@@ -877,13 +994,11 @@
                     if (!grouped[branch]) grouped[branch] = {};
                     if (!grouped[branch][name]) grouped[branch][name] = { name, count: 0, amount: 0, commission: 0, rate };
                     
-                    // Commission is calculated only on the base service amount, not the additional charge (like transpo)
-                    const baseAmount = Number(t.amount); 
-                    
+                    const amount = Number(t.amount);
                     grouped[branch][name].count++;
-                    grouped[branch][name].amount += baseAmount;
-                    // Calculate commission based on rate and base service amount
-                    grouped[branch][name].commission += baseAmount * (rate / 100);
+                    grouped[branch][name].amount += amount;
+                    // Calculate commission based on rate
+                    grouped[branch][name].commission += amount * (rate / 100);
                 });
 
                 const result = {};
@@ -913,34 +1028,18 @@
                 return data;
             }, [history, historyStartDate, historyEndDate]);
 
-            // ⬅️ NEW: Permission Check for Editing
-            const canEdit = (t) => {
-                if (!user) return false;
-                // Admins can edit anything (except offline queue items, which must sync first)
-                if (user.role === 'admin' && t.id) return true;
-                
-                // Staff can only edit their own pending entries, and only if the entry is not an expense
-                if (t.recordedBy === user.name && t.status === 'pending' && t.type !== 'expense' && t.id) {
-                    return true;
-                }
-                return false;
-            };
-
 
             const downloadCSV = (record) => {
-                const headers = ['Date', 'Branch', 'Time', 'Booking Type', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Base Amount', 'Additional Charge', 'Total Amount', 'Status', 'Recorded By', 'Notes']; 
+                const headers = ['Date', 'Branch', 'Time', 'Client Name / Description', 'Service / Category', 'Duration', 'Therapist', 'Amount (Income/Expense)', 'Status', 'Recorded By', 'Notes']; // UPDATED: Generic headers
                 const rows = record.transactions.map(t => [
                     `"${record.date}"`, 
                     `"${t.branch || 'N/A'}"`, 
                     `"${t.time}"`, 
-                    `"${t.bookingType || (t.type === 'expense' ? 'N/A' : 'In-Spa')}"`, 
-                    `"${t.clientName || t.description || ''}"`, 
-                    `"${t.service || t.category || ''}"`, 
+                    `"${t.clientName || t.description || ''}"`, // Use clientName or description
+                    `"${t.service || t.category || ''}"`, // Use service or category
                     `"${t.duration || ''}"`, 
                     `"${t.therapist || ''}"`, 
-                    (t.type === 'expense' ? t.amount : t.amount - (t.additionalCharge || 0)), 
-                    (t.type === 'expense' ? '' : t.additionalCharge || 0), 
-                    (t.type === 'expense' ? t.amount : Number(t.amount) + Number(t.additionalCharge || 0)), 
+                    t.amount, // Will be negative for expenses
                     t.status, 
                     `"${t.recordedBy || 'System'}"`,
                     `"${t.notes || ''}"`
@@ -956,20 +1055,20 @@
 
             // --- 4. ACTIONS ---
 
-            // List Management Handlers (omitted for brevity, assume unchanged)
-
+            // List Management Handlers
             const handleAddItem = async (listType, itemName, extraData = null) => {
-                if (!itemName) return;
+                const trimmedItemName = itemName.trim();
+                if (!trimmedItemName) return;
 
                 const basePath = `artifacts/${fb.appId}/public/data`;
                 let collectionName = '';
-                let data = { name: itemName.trim() };
                 let checkList = [];
+                const data = { name: trimmedItemName };
 
                 if (listType === 'therapist') {
                     collectionName = 'therapists';
                     checkList = therapistsList;
-                    if (extraData) data = { ...data, ...extraData };
+                    if (extraData) Object.assign(data, extraData);
                 } else if (listType === 'service') {
                     collectionName = 'services';
                     checkList = servicesList;
@@ -981,8 +1080,8 @@
                     return;
                 }
                 
-                if (checkList.some(item => item.name.toLowerCase() === itemName.trim().toLowerCase())) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Duplicate Item', message: `${itemName} already exists in ${listType}s.`, onConfirm: closeModal, confirmColor: 'red' });
+                if (checkList.some(item => item.name.toLowerCase() === trimmedItemName.toLowerCase())) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Duplicate Item', message: `${trimmedItemName} already exists in ${listType}s.`, onConfirm: closeModal, confirmColor: 'red' });
                     return;
                 }
 
@@ -1023,10 +1122,35 @@
 
             const handleEditItem = async (listType, id, updatedData) => {
                 let collectionName = '';
-                if (listType === 'therapist') collectionName = 'therapists';
-                else if (listType === 'service') collectionName = 'services';
-                else if (listType === 'duration') collectionName = 'durations';
+                let checkList = []; 
+                if (listType === 'therapist') {
+                    collectionName = 'therapists';
+                    checkList = therapistsList;
+                }
+                else if (listType === 'service') {
+                    collectionName = 'services';
+                    checkList = servicesList;
+                }
+                else if (listType === 'duration') {
+                    collectionName = 'durations';
+                    checkList = durationsList;
+                }
                 else return;
+
+                // --- DUPLICATE CHECK LOGIC ---
+                if (updatedData.name) {
+                    const newName = updatedData.name.trim().toLowerCase();
+                    const isDuplicate = checkList.some(item => 
+                        item.name.toLowerCase() === newName && item.id !== id
+                    );
+                    
+                    if (isDuplicate) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Duplicate Name', message: `The name "${updatedData.name}" is already in use by another ${listType}.`, onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+                    updatedData.name = newName.charAt(0).toUpperCase() + newName.slice(1); // Re-capitalize name before saving
+                }
+                // --- END DUPLICATE CHECK ---
 
                 const basePath = `artifacts/${fb.appId}/public/data`;
                 setIsGlobalLoading(true);
@@ -1041,10 +1165,11 @@
                 }
             };
             
+            // History Deletion Handler (Admin Only)
             const handleDeleteHistory = (id, date) => {
                 if (user?.role !== 'admin') return;
 
-                 setModal({
+                   setModal({
                     isOpen: true, type: 'confirm', title: `Delete Report?`, message: `Are you sure you want to permanently delete the archived report for ${date}? This action cannot be undone.`, confirmColor: 'red',
                     onConfirm: async () => {
                         closeModal();
@@ -1061,7 +1186,6 @@
                 });
             };
             
-
             const handleLoginSubmit = async (e) => {
                 e.preventDefault();
                 if (!loginBranch) {
@@ -1106,7 +1230,27 @@
                     setIsGlobalLoading(false);
                 }
             };
-            
+
+            // HELPER: Calculate Price
+            const calculatePrice = (serviceName, durationName) => {
+                if (!serviceName) return '';
+                
+                const foundService = servicesList.find(s => s.name === serviceName);
+                if (!foundService) return '';
+
+                // 1. Try to find exact duration price
+                if (durationName && foundService.prices && foundService.prices[durationName]) {
+                    return foundService.prices[durationName];
+                } 
+                
+                // 2. Fallback to base price (if any legacy price exists)
+                if (foundService.price) {
+                    return foundService.price;
+                }
+
+                return '';
+            };
+
             const handleServiceChange = (serviceName) => {
                 // Calculate price based on this NEW service + EXISTING duration
                 const newPrice = calculatePrice(serviceName, formData.duration);
@@ -1142,12 +1286,12 @@
 
                 if (transactionType === 'expense') {
                     if (!formData.amount || !formData.category || !formData.notes) {
-                         setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please provide Amount, Category, and Description (Notes) for the expense.', onConfirm: closeModal, confirmColor: 'red' });
-                        return;
+                           setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please provide Amount, Category, and Description (Notes) for the expense.', onConfirm: closeModal, confirmColor: 'red' });
+                           return;
                     }
                 } else {
-                    if (!formData.clientName || !formData.amount || !formData.service || !formData.therapist || !formData.bookingType) { 
-                        setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please ensure Client Name, Booking Type, Service, Therapist, and Price are all entered.', onConfirm: closeModal, confirmColor: 'red' });
+                    if (!formData.clientName || !formData.amount || !formData.service || !formData.therapist) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Missing Information', message: 'Please ensure Client Name, Service, Therapist, and Price are all entered.', onConfirm: closeModal, confirmColor: 'red' });
                         return;
                     }
 
@@ -1165,27 +1309,22 @@
                     }
                 }
                 
-                let baseAmount = parseFloat(formData.amount);
-                const additionalCharge = parseFloat(formData.additionalCharge) || 0; 
-
+                let amountValue = parseFloat(formData.amount);
                 if (transactionType === 'expense') {
-                    baseAmount = -Math.abs(baseAmount);
-                } else {
-                    baseAmount = Math.abs(baseAmount);
+                    // Expenses must be stored as negative numbers for easy calculation
+                    amountValue = -Math.abs(amountValue);
                 }
 
                 // Payload
                 const transactionPayload = {
-                    clientName: formData.clientName || formData.category, 
-                    description: formData.notes, 
+                    clientName: formData.clientName || formData.category, // Client name for sales, Category for expenses
+                    description: formData.notes, // Notes field used as description for expenses
                     service: formData.service,
-                    category: formData.category, 
+                    category: formData.category, // Used for expense category
                     therapist: formData.therapist,
-                    amount: baseAmount, 
-                    additionalCharge: transactionType === 'expense' ? 0 : additionalCharge, 
+                    amount: amountValue,
                     duration: formData.duration,
                     type: transactionType,
-                    bookingType: formData.bookingType || (transactionType === 'expense' ? 'N/A' : BOOKING_TYPES[0]), 
                     status: transactionType === 'expense' ? 'completed' : (transactionType === 'sale' ? 'completed' : 'pending'),
                     time: formData.time,
                     recordedBy: user.name,
@@ -1197,8 +1336,8 @@
                 if (!isOnline) {
                     const newOfflineItem = {
                         ...transactionPayload,
-                        localId: Date.now(), 
-                        timestamp: Date.now() 
+                        localId: Date.now(), // Temp ID
+                        timestamp: Date.now() // Local timestamp
                     };
                     setOfflineQueue(prev => [...prev, newOfflineItem]);
                     
@@ -1206,8 +1345,7 @@
                     setFormData({ 
                         clientName: '', service: '', duration: '', therapist: '', amount: '', 
                         type: 'booking', time: new Date().toTimeString().slice(0, 5), 
-                        targetBranch: resetTargetBranch, notes: '', category: '', 
-                        bookingType: BOOKING_TYPES[0], additionalCharge: ''
+                        targetBranch: resetTargetBranch, notes: '', category: ''
                     });
 
                     setModal({ isOpen: true, type: 'alert', title: 'Saved Offline', message: `${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)} queued. Will sync when online.`, onConfirm: closeModal, confirmColor: 'orange' });
@@ -1228,8 +1366,7 @@
                     setFormData({ 
                         clientName: '', service: '', duration: '', therapist: '', amount: '', 
                         type: 'booking', time: new Date().toTimeString().slice(0, 5),
-                        targetBranch: resetTargetBranch, notes: '', category: '',
-                        bookingType: BOOKING_TYPES[0], additionalCharge: '' 
+                        targetBranch: resetTargetBranch, notes: '', category: ''
                     });
                     
                     setModal({ isOpen: true, type: 'alert', title: 'Record Saved!', message: `${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)} saved for ${transactionBranch}.`, onConfirm: closeModal, confirmColor: 'logo-green' });
@@ -1237,40 +1374,6 @@
                     setView('dashboard');
                 } catch (error) {
                     setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to save record. Please check connection.', onConfirm: closeModal, confirmColor: 'red' });
-                } finally {
-                    setIsGlobalLoading(false);
-                }
-            };
-            
-            // ⬅️ NEW: Update Booking Handler
-            const handleUpdateBooking = async (id, updatedPayload) => {
-                if (!canEdit(updatedPayload)) {
-                    setModal({ isOpen: true, type: 'alert', title: 'Access Denied', message: 'You do not have permission to modify this completed record.', onConfirm: closeModal, confirmColor: 'red' });
-                    setEditTransactionData(null); 
-                    return;
-                }
-                
-                // Clear the current form/modal
-                setEditTransactionData(null);
-                setIsGlobalLoading(true);
-
-                try {
-                    const basePath = `artifacts/${fb.appId}/public/data`;
-                    
-                    // Create the final payload (clean up local state keys)
-                    const finalPayload = { ...updatedPayload };
-                    delete finalPayload.id;
-                    delete finalPayload.localId;
-                    delete finalPayload.timestamp; 
-                    
-                    // Update Firestore
-                    await fb.db.collection(`${basePath}/transactions`).doc(id).update(finalPayload);
-                    
-                    setModal({ isOpen: true, type: 'alert', title: 'Update Successful', message: 'Record has been updated.', onConfirm: closeModal, confirmColor: 'logo-green' });
-
-                } catch (error) {
-                    console.error("Update failed", error);
-                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to update record. Please check connection.', onConfirm: closeModal, confirmColor: 'red' });
                 } finally {
                     setIsGlobalLoading(false);
                 }
@@ -1358,19 +1461,111 @@
                 });
             };
 
-            // User & Profile Handlers (omitted for brevity, assume unchanged)
+            // User & Profile Handlers
+            const handleAddUser = async (e) => {
+                e.preventDefault();
+                const trimmedUsername = newUser.username.trim();
+                const trimmedName = newUser.name.trim();
+                
+                if (!trimmedName || !trimmedUsername || !newUser.pin) return;
+                
+                setIsGlobalLoading(true);
+                try {
+                    const hashedPin = await hashPin(newUser.pin);
+                    if (!hashedPin) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'PIN hashing failed. Check PIN length (min 4).', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+                    
+                    if (newUser.pin.length !== 4 && newUser.role === 'staff') {
+                        setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: 'Staff PINs must be exactly 4 digits.', onConfirm: closeModal, confirmColor: 'red' });
+                        return;
+                    }
+
+                    if (users.some(u => u.username.toLowerCase() === trimmedUsername.toLowerCase())) { 
+                        setModal({ isOpen: true, type: 'alert', title: 'Username Taken', message: 'This username is already in use.', onConfirm: closeModal, confirmColor: 'red' });
+                        return; 
+                    }
+                    
+                    const basePath = `artifacts/${fb.appId}/public/data`;
+                    const newUserPayload = { 
+                        ...newUser, 
+                        name: trimmedName,
+                        username: trimmedUsername,
+                        pin: hashedPin 
+                    };
+                    
+                    // SMART ADD: Auto-tag with creator's branch
+                    if (user.currentBranch !== 'ALL') {
+                        newUserPayload.currentBranch = user.currentBranch;
+                    }
+
+                    await fb.db.collection(`${basePath}/users`).add(newUserPayload);
+                    setNewUser({ name: '', username: '', pin: '', role: 'staff' });
+                } catch(err) {
+                    setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to add user.', confirmColor: 'red', onConfirm: closeModal });
+                } finally {
+                    setIsGlobalLoading(false);
+                }
+            };
+
+            const handleDeleteUser = (id) => {
+                if (users.length <= 1) { 
+                    setModal({ isOpen: true, type: 'alert', title: 'Action Denied', message: 'Cannot delete the last remaining user.', onConfirm: closeModal, confirmColor: 'red' });
+                    return; 
+                }
+                setModal({ isOpen: true, type: 'confirm', title: 'Remove Staff?', message: 'Revoke access for this user?', confirmColor: 'red', onConfirm: async () => { 
+                    closeModal();
+                    setIsGlobalLoading(true);
+                    try {
+                        const basePath = `artifacts/${fb.appId}/public/data`;
+                        await fb.db.collection(`${basePath}/users`).doc(id).delete(); 
+                    } catch(err) {
+                        setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to delete user.', confirmColor: 'red', onConfirm: closeModal });
+                    } finally {
+                        setIsGlobalLoading(false);
+                    }
+                }});
+            };
+
+            // NEW: Owner Toggle Role Function
+            const handleToggleRole = (targetUser) => {
+                const newRole = targetUser.role === 'admin' ? 'staff' : 'admin';
+                const action = newRole === 'admin' ? 'Promote' : 'Demote';
+                
+                setModal({
+                    isOpen: true,
+                    type: 'confirm',
+                    title: `${action} Staff?`,
+                    message: `Are you sure you want to change ${targetUser.name}'s role to ${newRole.toUpperCase()}?`,
+                    confirmColor: 'logo-green',
+                    onConfirm: async () => {
+                        closeModal();
+                        setIsGlobalLoading(true);
+                        try {
+                            const basePath = `artifacts/${fb.appId}/public/data`;
+                            await fb.db.collection(`${basePath}/users`).doc(targetUser.id).update({ role: newRole });
+                        } catch (error) {
+                            setModal({ isOpen: true, type: 'alert', title: 'Error', message: 'Failed to update role.', confirmColor: 'red', onConfirm: closeModal });
+                        } finally {
+                            setIsGlobalLoading(false);
+                        }
+                    }
+                });
+            };
 
             const handleUpdateProfile = async (e) => {
                 e.preventDefault();
                 
                 const newPin = profileData.pin;
-                const updateData = { username: profileData.username };
+                const newUsername = profileData.username.trim();
+                const updateData = { username: newUsername };
 
                 setIsGlobalLoading(true);
                 try {
                     if (newPin && newPin.length > 0) {
-                        // Policy Check: Owner 6 digits, Staff/Admin 4 digits
-                        const requiredLen = user.username === 'admin' ? 6 : 4;
+                        // Policy Check: Staff/Admin 4 digits
+                        const requiredLen = 4; // Assuming all users use 4 digits for pin, only admin special is username 'admin'
                         if (newPin.length !== requiredLen) {
                              setModal({ isOpen: true, type: 'alert', title: 'Policy Check', message: `Your PIN must be exactly ${requiredLen} digits.`, onConfirm: closeModal, confirmColor: 'red' });
                              return;
@@ -1384,7 +1579,7 @@
                         updateData.pin = hashedPin;
                     }
 
-                    if (users.some(u => u.username.toLowerCase() === profileData.username.toLowerCase() && u.id !== user.id)) { 
+                    if (users.some(u => u.username.toLowerCase() === newUsername.toLowerCase() && u.id !== user.id)) { 
                         setModal({ isOpen: true, type: 'alert', title: 'Username Taken', message: 'This username is already in use by another staff.', onConfirm: closeModal, confirmColor: 'red' });
                         return; 
                     }
@@ -1443,12 +1638,7 @@
                         <h2 className="text-xl font-bold text-slate-800 mb-2">Setup Failed</h2>
                         <p className="text-slate-500 text-sm mb-6 font-mono bg-slate-50 p-2 rounded border text-left text-xs">{configError}</p>
                         <p className="text-xs text-slate-400">
-                            Check: 
-                            <ol className="list-decimal text-left pl-6 mt-2 space-y-1">
-                                <li>Did you create the Firestore Database?</li>
-                                <li>Did you enable Anonymous Authentication?</li>
-                                <li>Did you add the Vercel domain to Authorized Domains?</li>
-                            </ol>
+                            Check the console for detailed Firebase connection errors.
                         </p>
                     </div>
                 </div>
@@ -1525,6 +1715,7 @@
                         <div className="flex p-1 bg-slate-200/60 rounded-xl mb-6 sticky top-[70px] z-10 backdrop-blur-sm overflow-x-auto">
                             <button onClick={()=>setView('dashboard')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='dashboard'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.LayoutDashboard size={16}/> Daily</button>
                             <button onClick={()=>setView('add')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='add'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.Plus size={16}/> Booking</button>
+                            {/* UPDATED: Expense button label */}
                             <button onClick={()=>setView('expense')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='expense'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.MinusCircle size={16}/> Expense</button>
                             <button onClick={()=>setView('profile')} className={`flex-1 min-w-[70px] py-2.5 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 ${view==='profile'?'bg-white text-logo-green-700 shadow-sm':'text-slate-500'}`}><Icons.UserCog size={16}/> Profile</button>
                             {user.role === 'admin' && (
@@ -1551,6 +1742,7 @@
                                     <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100"><p className="text-slate-500 text-xs font-medium uppercase">Expenses</p><h3 className="text-xl font-bold text-slate-800 mt-1 text-red-600">{formatCurrency(stats.totalExpenses)}</h3></div>
                                     <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100 border-l-[3px] border-logo-green-500"><p className="text-slate-500 text-xs font-medium uppercase flex items-center gap-1"><Icons.Wallet size={12}/> Net Cash</p><h3 className="text-xl font-bold text-logo-green-700 mt-1">{formatCurrency(stats.netCash)}</h3></div>
                                 </div>
+
                                 <div className="bg-white p-4 rounded-xl shadow-sm border border-logo-green-100">
                                     <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Icons.Trophy size={16} className="text-logo-green-700"/> Payroll Estimate ({user.currentBranch})</h3>
                                     
@@ -1564,31 +1756,31 @@
                                              if (idxA === -1) return 1;
                                              if (idxB === -1) return -1;
                                              return idxA - idxB;
-                                         }).map(branch => (
-                                            <div key={branch} className="mb-4 last:mb-0">
-                                                {(user.currentBranch === 'ALL' || Object.keys(therapistStats).length > 1) && (
-                                                    <h4 className="text-[10px] font-bold text-logo-green-700 uppercase mb-2 bg-logo-green-50 px-2 py-1 rounded inline-block">
-                                                        {branch}
-                                                    </h4>
-                                                )}
-                                                <div className="space-y-2">
-                                                    {therapistStats[branch].map((s) => (
-                                                        <div key={s.name} className="flex justify-between items-center pb-2 border-b border-slate-50 last:border-0 last:pb-0 ml-1">
-                                                            <div className="flex gap-2 items-center">
-                                                                <span className="w-6 h-6 bg-logo-green-100 text-logo-green-700 rounded-full flex items-center justify-center text-[10px] font-bold">{s.name.charAt(0)}</span>
-                                                                <span className="text-sm font-semibold text-slate-700">{s.name}</span>
+                                           }).map(branch => (
+                                                <div key={branch} className="mb-4 last:mb-0">
+                                                    {(user.currentBranch === 'ALL' || Object.keys(therapistStats).length > 1) && (
+                                                        <h4 className="text-[10px] font-bold text-logo-green-700 uppercase mb-2 bg-logo-green-50 px-2 py-1 rounded inline-block">
+                                                            {branch}
+                                                        </h4>
+                                                    )}
+                                                    <div className="space-y-2">
+                                                        {therapistStats[branch].map((s) => (
+                                                            <div key={s.name} className="flex justify-between items-center pb-2 border-b border-slate-50 last:border-0 last:pb-0 ml-1">
+                                                                <div className="flex gap-2 items-center">
+                                                                    <span className="w-6 h-6 bg-logo-green-100 text-logo-green-700 rounded-full flex items-center justify-center text-[10px] font-bold">{s.name.charAt(0)}</span>
+                                                                    <span className="text-sm font-semibold text-slate-700">{s.name}</span>
+                                                                </div>
+                                                                <div className="text-right flex flex-col">
+                                                                    <span className="text-sm font-bold text-logo-green-700 flex items-center gap-1">
+                                                                        <Icons.TrendingUp size={12} className="text-teal-600"/> {formatCurrency(s.commission)} 
+                                                                    </span>
+                                                                    <span className="text-[9px] text-slate-400">({s.rate}% of {formatCurrency(s.amount)})</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="text-right flex flex-col">
-                                                                <span className="text-sm font-bold text-logo-green-700 flex items-center gap-1">
-                                                                    <Icons.TrendingUp size={12} className="text-teal-600"/> {formatCurrency(s.commission)} 
-                                                                </span>
-                                                                <span className="text-[9px] text-slate-400">({s.rate}% of {formatCurrency(s.amount)})</span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))
+                                            ))
                                     )}
                                 </div>
 
@@ -1623,12 +1815,11 @@
                                     {filteredTransactions.length===0?<div className="text-center py-12 border border-dashed rounded-xl text-slate-400 text-sm">No records found for the current filter.</div>:
                                     <div className="space-y-3">
                                         {filteredTransactions.map(t=>(
-                                            // Conditional styling based on type
+                                            // UPDATED: Conditional styling based on type
                                             <div key={t.id} className={`bg-white p-4 rounded-xl border-l-[6px] flex justify-between items-start ${
                                                 t.type === 'expense' ? 'border-l-red-500' : (t.status==='completed'?'border-l-logo-green-500':'border-l-orange-400')
                                             } shadow-sm`}>
                                                 <div className="flex-1 pr-4">
-                                                    {/* Displaying total price charged to client */}
                                                     {/* Displaying timestamp date for consistency */}
                                                     <div className="flex gap-2 mb-1 items-center">
                                                         <span className="text-[10px] font-bold bg-slate-100 px-2 rounded text-slate-500">{t.branch}</span>
@@ -1640,17 +1831,11 @@
                                                         {t.type === 'expense' ? `Expense: ${t.category}` : t.clientName}
                                                     </h3>
                                                     
-                                                    <div className="text-xs text-slate-500 mt-1 flex gap-2 flex-wrap items-center">
+                                                    <div className="text-xs text-slate-500 mt-1 flex gap-2 flex-wrap">
                                                         {t.type === 'expense' ? (
                                                             <span>{t.notes}</span>
                                                         ) : (
                                                             <>
-                                                                {/* Booking Type Badge */}
-                                                                {t.bookingType === 'Home Service' && (
-                                                                    <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                                                                        <Icons.Car size={10} /> Home Service
-                                                                    </span>
-                                                                )}
                                                                 <span>{t.service}</span>
                                                                 {t.duration && <span> • {t.duration}</span>}
                                                                 <span> • {t.therapist}</span>
@@ -1664,31 +1849,11 @@
                                                             <span className="italic">{t.notes}</span>
                                                         </div>
                                                     )}
-                                                    {/* Display Additional Charge Details */}
-                                                    {t.type !== 'expense' && t.additionalCharge > 0 && (
-                                                        <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
-                                                            <Icons.DollarSign size={12}/> Base: {formatCurrency(t.amount)} + Fee: {formatCurrency(t.additionalCharge)}
-                                                        </div>
-                                                    )}
                                                 </div>
                                                 
                                                 <div className="text-right min-w-[80px]">
-                                                    {/* Displaying Total Amount Charged to Client */}
-                                                    <div className={`font-bold text-lg ${t.type === 'expense' ? 'text-red-600' : (t.status==='completed'?'text-logo-green-700':'text-orange-600')}`}>
-                                                        {t.type === 'expense' ? formatCurrency(t.amount) : formatCurrency(Number(t.amount) + Number(t.additionalCharge || 0))}
-                                                    </div>
+                                                    <div className={`font-bold text-lg ${t.type === 'expense' ? 'text-red-600' : (t.status==='completed'?'text-logo-green-700':'text-orange-600')}`}>{formatCurrency(t.amount)}</div>
                                                     <div className="flex justify-end gap-2 mt-1">
-                                                        {/* ⬅️ NEW: Edit Button */}
-                                                        {canEdit(t) && (
-                                                            <button 
-                                                                onClick={()=>setEditTransactionData(t)} 
-                                                                className="p-1.5 text-slate-300 hover:text-blue-500"
-                                                                title="Edit Record"
-                                                            >
-                                                                <Icons.Pencil size={16}/>
-                                                            </button>
-                                                        )}
-
                                                         {t.type !== 'expense' && (
                                                             <button onClick={()=>toggleStatus(t)} className={`p-1.5 rounded-full ${t.status==='completed'?'bg-logo-green-100 text-logo-green-700':'bg-orange-100 text-orange-600'}`}>
                                                                 {t.status==='completed'?<Icons.CheckCircle2 size={16}/>:<Icons.DollarSign size={16}/>}
@@ -1732,13 +1897,6 @@
                                         <label className={`border-2 rounded-xl p-3 flex flex-col items-center gap-2 ${formData.type==='booking'?'border-logo-green-700 bg-logo-green-50/50':'border-slate-100'}`}><input type="radio" name="type" value="booking" checked={formData.type==='booking'} onChange={(e)=>setFormData({...formData, type:e.target.value})} className="hidden"/><Icons.Calendar/><span className="text-sm font-bold">Appointment</span></label>
                                         <label className={`border-2 rounded-xl p-3 flex flex-col items-center gap-2 ${formData.type==='sale'?'border-teal-600 bg-teal-50/50':'border-slate-100'}`}><input type="radio" name="type" value="sale" checked={formData.type==='sale'} onChange={(e)=>setFormData({...formData, type:e.target.value})} className="hidden"/><Icons.DollarSign/><span className="text-sm font-bold">Direct Pay</span></label>
                                     </div>
-                                    
-                                    {/* Booking Type Selector */}
-                                    <select required value={formData.bookingType} onChange={e=>setFormData({...formData, bookingType:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50 appearance-none">
-                                        <option value="" disabled>Select Booking Type*</option>
-                                        {BOOKING_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
-                                    </select>
-
                                     <input required placeholder="Client Name*" value={formData.clientName} onChange={e=>setFormData({...formData, clientName:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
                                     
                                     <div className="space-y-4">
@@ -1771,29 +1929,16 @@
                                     />
 
                                     <div className="grid grid-cols-2 gap-4">
-                                        {/* Base Service Price */}
+                                        {/* Price is now editable and required, auto-filled by service selection */}
                                         <input required 
                                             type="number" step="0.01" 
-                                            placeholder="Base Service Price (P)*" 
+                                            placeholder="Price (P)*" 
                                             value={formData.amount} 
                                             onChange={e=>setFormData({...formData, amount:e.target.value})} 
                                             className="w-full p-3 border rounded-xl bg-slate-50"
                                         />
-                                        {/* Additional Charge */}
-                                        <input 
-                                            type="number" step="0.01" 
-                                            placeholder={formData.bookingType === 'Home Service' ? 'Transport Fee / Extra Charge (P)' : 'Additional Charge / Tip (P)'}
-                                            value={formData.additionalCharge} 
-                                            onChange={e=>setFormData({...formData, additionalCharge:e.target.value})} 
-                                            className="w-full p-3 border rounded-xl bg-slate-50"
-                                        />
+                                        <input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
                                     </div>
-                                    <input type="time" value={formData.time} onChange={e=>setFormData({...formData, time:e.target.value})} className="w-full p-3 border rounded-xl bg-slate-50"/>
-
-                                    <div className="p-3 bg-slate-100 rounded-lg text-sm font-bold text-slate-700">
-                                        TOTAL CHARGED: {formatCurrency(Number(formData.amount || 0) + Number(formData.additionalCharge || 0))}
-                                    </div>
-
                                     <button className="w-full bg-logo-green-700 text-white font-bold py-4 rounded-xl shadow-lg mt-2">Save Booking</button>
                                 </form>
                             </div>
@@ -1827,6 +1972,7 @@
                                     <div className="flex gap-2">
                                         <select required value={formData.category} onChange={e=>setFormData({...formData, category:e.target.value})} className="flex-1 p-3 border rounded-xl bg-slate-50 appearance-none">
                                             <option value="" disabled>Select Category*</option>
+                                            {/* UPDATED: Removed "Petty Cash" from category descriptions */}
                                             <option value="Supplies">Supplies (Oil, Linens, etc.)</option>
                                             <option value="Maintenance">Maintenance/Repair</option>
                                             <option value="Utilities">Utilities Payment (Partial)</option>
@@ -1971,8 +2117,8 @@
                                     <h3 className="font-bold mb-4">Add Staff</h3>
                                     <form onSubmit={handleAddUser} className="space-y-4">
                                         <input required placeholder="Name" value={newUser.name} onChange={e=>setNewUser({...newUser, name:e.target.value})} className="w-full p-2 border rounded"/>
-                                        <input required placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser.username, username:e.target.value})} className="w-full p-2 border rounded"/>
-                                        <div className="flex gap-2"><input required maxLength="4" placeholder="PIN (Min 4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/><select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
+                                        <input required placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-2 border rounded"/>
+                                        <div className="flex gap-2"><input required maxLength="4" placeholder="PIN (4 digits)" type="password" inputMode="numeric" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin:e.target.value})} className="w-full p-2 border rounded"/><select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
                                         <button className="w-full bg-logo-green-700 text-white py-2 rounded font-bold">Add User</button>
                                     </form>
                                 </div>
@@ -2009,7 +2155,7 @@
                                                     {expandedHistoryId===h.id?<Icons.ChevronUp size={20} className="text-slate-400"/>:<Icons.ChevronDown size={20} className="text-slate-400"/>}
                                                 </div>
                                             </div>
-                                            {expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm">{h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.type==='expense'? t.category : t.clientName} ({t.type === 'expense' ? 'Expense' : t.service})</span><span className={`font-bold ${t.type==='expense'?'text-red-600':'text-logo-green-700'}`}>{t.type === 'expense' ? formatCurrency(t.amount) : formatCurrency(Number(t.amount) + Number(t.additionalCharge || 0))}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Desc: {t.notes}</span>}</div>)}</div>}
+                                            {expandedHistoryId===h.id && <div className="bg-slate-50 p-4 border-t text-sm">{h.transactions.map((t,i)=><div key={i} className="flex flex-col py-2 border-b last:border-0"><div className="flex justify-between"><span>{t.time} - {t.type==='expense'? t.category : t.clientName} ({t.type === 'expense' ? 'Expense' : t.service})</span><span className={`font-bold ${t.type==='expense'?'text-red-600':'text-logo-green-700'}`}>{formatCurrency(t.amount)}</span></div>{t.notes && t.notes.trim() && <span className="text-xs text-slate-500 italic mt-1">Desc: {t.notes}</span>}</div>)}</div>}
                                         </div>
                                     ))
                                 )}
@@ -2029,19 +2175,6 @@
                         editUserModal={editUserModal} 
                         setEditUserModal={setEditUserModal} 
                         handleResetPin={handleResetPin}
-                    />
-
-                    {/* ⬅️ NEW: Edit Booking Modal */}
-                    <EditBookingModal
-                        data={editTransactionData}
-                        user={user}
-                        therapistsList={therapistsList}
-                        servicesList={servicesList}
-                        durationsList={durationsList}
-                        onUpdate={handleUpdateBooking}
-                        onClose={() => setEditTransactionData(null)}
-                        formatCurrency={formatCurrency}
-                        calculatePrice={calculatePrice}
                     />
                 </div>
             );
